@@ -16,8 +16,7 @@ describe('workerStore', () => {
     // Reset store before each test
     const { result } = renderHook(() => useWorkerStore());
     act(() => {
-      result.current.setWorkers([]);
-      result.current.selectWorker(null);
+      result.current.clearWorkers();
     });
   });
 
@@ -29,7 +28,7 @@ describe('workerStore', () => {
 
     it('should have no selected worker initially', () => {
       const { result } = renderHook(() => useWorkerStore());
-      expect(result.current.selectedWorker).toBeNull();
+      expect(result.current.selectedWorkerId).toBeNull();
     });
   });
 
@@ -88,8 +87,13 @@ describe('workerStore', () => {
         result.current.addWorker(mockWorker);
       });
 
+      const lastActive = new Date().toISOString();
+
       act(() => {
-        result.current.updateWorker('worker-1', { status: 'idle' });
+        result.current.updateWorker('worker-1', {
+          status: 'idle',
+          lastActive,
+        });
       });
 
       expect(result.current.workers[0].lastActive).toBeDefined();
@@ -133,13 +137,13 @@ describe('workerStore', () => {
         result.current.selectWorker('worker-1');
       });
 
-      expect(result.current.selectedWorker).toBe('worker-1');
+      expect(result.current.selectedWorkerId).toBe('worker-1');
 
       act(() => {
         result.current.removeWorker('worker-1');
       });
 
-      expect(result.current.selectedWorker).toBeNull();
+      expect(result.current.selectedWorkerId).toBeNull();
     });
 
     it('should keep selection if different worker is removed', () => {
@@ -159,7 +163,7 @@ describe('workerStore', () => {
         result.current.removeWorker('worker-2');
       });
 
-      expect(result.current.selectedWorker).toBe('worker-1');
+      expect(result.current.selectedWorkerId).toBe('worker-1');
     });
   });
 
@@ -171,7 +175,7 @@ describe('workerStore', () => {
         result.current.selectWorker('worker-1');
       });
 
-      expect(result.current.selectedWorker).toBe('worker-1');
+      expect(result.current.selectedWorkerId).toBe('worker-1');
     });
 
     it('should deselect by passing null', () => {
@@ -182,7 +186,7 @@ describe('workerStore', () => {
         result.current.selectWorker(null);
       });
 
-      expect(result.current.selectedWorker).toBeNull();
+      expect(result.current.selectedWorkerId).toBeNull();
     });
   });
 
@@ -195,7 +199,7 @@ describe('workerStore', () => {
       });
 
       act(() => {
-        result.current.pauseWorker('worker-1');
+        result.current.updateWorkerStatus('worker-1', 'paused');
       });
 
       expect(result.current.workers[0].status).toBe('paused');
@@ -211,10 +215,10 @@ describe('workerStore', () => {
       });
 
       act(() => {
-        result.current.resumeWorker('worker-1');
+        result.current.updateWorkerStatus('worker-1', 'working');
       });
 
-      expect(result.current.workers[0].status).toBe('active');
+      expect(result.current.workers[0].status).toBe('working');
     });
   });
 
@@ -223,15 +227,15 @@ describe('workerStore', () => {
       const { result } = renderHook(() => useWorkerStore());
 
       act(() => {
-        result.current.addWorker({ ...mockWorker, id: 'w1', status: 'active' });
+        result.current.addWorker({ ...mockWorker, id: 'w1', status: 'working' });
         result.current.addWorker({ ...mockWorker, id: 'w2', status: 'idle' });
-        result.current.addWorker({ ...mockWorker, id: 'w3', status: 'active' });
+        result.current.addWorker({ ...mockWorker, id: 'w3', status: 'working' });
         result.current.addWorker({ ...mockWorker, id: 'w4', status: 'paused' });
       });
 
       const activeWorkers = result.current.getActiveWorkers();
       expect(activeWorkers).toHaveLength(2);
-      expect(activeWorkers.every((w) => w.status === 'active')).toBe(true);
+      expect(activeWorkers.every((w) => w.status === 'working')).toBe(true);
     });
   });
 

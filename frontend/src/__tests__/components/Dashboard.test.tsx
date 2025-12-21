@@ -32,7 +32,9 @@ describe('Dashboard', () => {
     it('should display all stat cards', () => {
       render(<Dashboard />);
 
-      expect(screen.getByText('Active Agents')).toBeInTheDocument();
+      // Use getAllByText since "Active Agents" appears multiple times
+      const activeAgentsTexts = screen.getAllByText('Active Agents');
+      expect(activeAgentsTexts.length).toBeGreaterThan(0);
       expect(screen.getByText('Tasks Completed')).toBeInTheDocument();
       expect(screen.getByText('In Queue')).toBeInTheDocument();
       expect(screen.getByText('Success Rate')).toBeInTheDocument();
@@ -90,15 +92,21 @@ describe('Dashboard', () => {
   describe('Active Agents', () => {
     it('should display active agents section', () => {
       render(<Dashboard />);
-      expect(screen.getByText('Active Agents')).toBeInTheDocument();
+      // Use getAllByText since "Active Agents" appears multiple times
+      const activeAgentsTexts = screen.getAllByText('Active Agents');
+      expect(activeAgentsTexts.length).toBeGreaterThan(0);
     });
 
     it('should render agent cards', () => {
       render(<Dashboard />);
 
-      expect(screen.getByText('CodeReviewer-A1')).toBeInTheDocument();
-      expect(screen.getByText('DataProcessor-B2')).toBeInTheDocument();
-      expect(screen.getByText('Deployer-D4')).toBeInTheDocument();
+      // Agent names may appear multiple times in different sections
+      const codeReviewerTexts = screen.getAllByText('CodeReviewer-A1');
+      expect(codeReviewerTexts.length).toBeGreaterThan(0);
+      const dataProcessorTexts = screen.getAllByText('DataProcessor-B2');
+      expect(dataProcessorTexts.length).toBeGreaterThan(0);
+      const deployerTexts = screen.getAllByText('Deployer-D4');
+      expect(deployerTexts.length).toBeGreaterThan(0);
     });
 
     it('should display agent types', () => {

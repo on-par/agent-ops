@@ -32,7 +32,9 @@ describe('Kanban', () => {
 
     it('should display in progress count', () => {
       render(<Kanban />);
-      expect(screen.getByText(/in progress/i)).toBeInTheDocument();
+      // Use getAllByText since "in progress" appears multiple times
+      const inProgressTexts = screen.getAllByText(/in progress/i);
+      expect(inProgressTexts.length).toBeGreaterThan(0);
     });
   });
 
@@ -90,19 +92,29 @@ describe('Kanban', () => {
     it('should display task tags', () => {
       render(<Kanban />);
 
-      expect(screen.getByText('auth')).toBeInTheDocument();
-      expect(screen.getByText('feature')).toBeInTheDocument();
-      expect(screen.getByText('database')).toBeInTheDocument();
-      expect(screen.getByText('security')).toBeInTheDocument();
-      expect(screen.getByText('testing')).toBeInTheDocument();
+      // Use getAllByText since tags appear multiple times
+      const authTags = screen.getAllByText('auth');
+      expect(authTags.length).toBeGreaterThan(0);
+      const featureTags = screen.getAllByText('feature');
+      expect(featureTags.length).toBeGreaterThan(0);
+      const databaseTags = screen.getAllByText('database');
+      expect(databaseTags.length).toBeGreaterThan(0);
+      const securityTags = screen.getAllByText('security');
+      expect(securityTags.length).toBeGreaterThan(0);
+      const testingTags = screen.getAllByText('testing');
+      expect(testingTags.length).toBeGreaterThan(0);
     });
 
     it('should show assigned agents', () => {
       render(<Kanban />);
 
-      expect(screen.getByText('CodeReviewer-A1')).toBeInTheDocument();
-      expect(screen.getByText('SecurityScanner')).toBeInTheDocument();
-      expect(screen.getByText('TestGenerator')).toBeInTheDocument();
+      // Use getAllByText since agents may appear multiple times
+      const codeReviewerTexts = screen.getAllByText('CodeReviewer-A1');
+      expect(codeReviewerTexts.length).toBeGreaterThan(0);
+      const securityScannerTexts = screen.getAllByText('SecurityScanner');
+      expect(securityScannerTexts.length).toBeGreaterThan(0);
+      const testGeneratorTexts = screen.getAllByText('TestGenerator');
+      expect(testGeneratorTexts.length).toBeGreaterThan(0);
     });
   });
 
