@@ -5,7 +5,6 @@ import {
   Search,
   MoreHorizontal,
   Copy,
-  Trash2,
   Edit3,
   Play,
   Clock,
