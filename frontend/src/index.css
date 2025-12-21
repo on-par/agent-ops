@@ -1,18 +1,49 @@
 @import "tailwindcss";
 
+/* Fonts: JetBrains Mono for data, Outfit for UI */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap');
+
 @layer base {
   :root {
-    /* Color palette - RGB values for alpha support */
-    --color-background: 2 6 23; /* slate-950 */
-    --color-surface: 15 23 42; /* slate-900 */
+    /* Core palette - matching mockup exactly */
+    --bg-deep: #0a0e14;
+    --bg-card: #111820;
+    --bg-elevated: #1a2230;
+    --bg-hover: #232d3f;
+
+    /* Accents */
+    --cyan-glow: #00f0ff;
+    --cyan-dim: #0a8f9a;
+    --emerald: #10b981;
+    --amber: #f59e0b;
+    --rose: #f43f5e;
+    --violet: #8b5cf6;
+    --blue: #3b82f6;
+
+    /* Text */
+    --text-primary: #f1f5f9;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+
+    /* Effects */
+    --glow-cyan: 0 0 20px rgba(0, 240, 255, 0.3);
+    --glow-emerald: 0 0 15px rgba(16, 185, 129, 0.4);
+    --glow-rose: 0 0 15px rgba(244, 63, 94, 0.4);
+
+    /* Grid pattern */
+    --grid-color: rgba(0, 240, 255, 0.03);
+
+    /* Legacy color palette - RGB values for alpha support */
+    --color-background: 10 14 20; /* #0a0e14 */
+    --color-surface: 17 24 32; /* #111820 */
     --color-border: 30 41 59; /* slate-800 */
-    --color-text: 248 250 252; /* slate-50 */
-    --color-muted: 148 163 184; /* slate-400 */
-    --color-accent: 6 182 212; /* cyan-500 */
-    --color-success: 16 185 129; /* emerald-500 */
-    --color-warning: 245 158 11; /* amber-500 */
-    --color-error: 244 63 94; /* rose-500 */
-    --color-progress: 59 130 246; /* blue-500 */
+    --color-text: 241 245 249; /* #f1f5f9 */
+    --color-muted: 148 163 184; /* #94a3b8 */
+    --color-accent: 0 240 255; /* #00f0ff */
+    --color-success: 16 185 129; /* #10b981 */
+    --color-warning: 245 158 11; /* #f59e0b */
+    --color-error: 244 63 94; /* #f43f5e */
+    --color-progress: 59 130 246; /* #3b82f6 */
 
     /* shadcn/ui CSS variables */
     --background: 222.2 84% 4.9%;
@@ -45,33 +76,310 @@
 
 @layer base {
   * {
-    @apply border-border;
+    border-color: rgba(255, 255, 255, 0.04);
   }
 
   html {
-    @apply dark;
+    color-scheme: dark;
   }
 
   body {
-    @apply bg-background text-text antialiased;
+    font-family: 'Outfit', sans-serif;
+    background-color: var(--bg-deep);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     font-feature-settings: "rlig" 1, "calt" 1;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Monospace font utility class */
+  .font-mono {
+    font-family: 'JetBrains Mono', monospace;
   }
 
   /* Custom scrollbar for dark theme */
   ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 4px;
+    height: 4px;
   }
 
   ::-webkit-scrollbar-track {
-    @apply bg-background;
+    background: transparent;
   }
 
   ::-webkit-scrollbar-thumb {
-    @apply bg-border rounded-full;
+    background-color: var(--bg-hover);
+    border-radius: 2px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-muted;
+    background-color: var(--text-muted);
   }
+}
+
+/* Animations */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 20px rgba(0, 240, 255, 0.3); }
+  50% { box-shadow: 0 0 30px rgba(0, 240, 255, 0.5); }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Animation utility classes */
+.animate-pulse-glow {
+  animation: pulse-glow 3s ease-in-out infinite;
+}
+
+.animate-blink {
+  animation: blink 1.5s ease-in-out infinite;
+}
+
+.animate-slide-in {
+  animation: slideIn 0.3s ease;
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.5s ease;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.4s ease;
+}
+
+/* Glow effects */
+.glow-cyan {
+  box-shadow: var(--glow-cyan);
+}
+
+.text-glow-cyan {
+  text-shadow: 0 0 20px rgba(0, 240, 255, 0.5);
+}
+
+.glow-emerald {
+  box-shadow: var(--glow-emerald);
+}
+
+.glow-rose {
+  box-shadow: var(--glow-rose);
+}
+
+/* Grid background */
+.grid-bg {
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--grid-color) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.grid-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 0%, rgba(0, 240, 255, 0.08) 0%, transparent 60%);
+}
+
+/* Card hover effects */
+.card-hover {
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.card-hover::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--cyan-glow), transparent);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.card-hover:hover {
+  border-color: rgba(0, 240, 255, 0.15);
+  transform: translateY(-2px);
+}
+
+.card-hover:hover::before {
+  opacity: 1;
+}
+
+/* Status indicators */
+.status-active::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 12px;
+  height: 12px;
+  background: var(--emerald);
+  border-radius: 50%;
+  border: 2px solid var(--bg-elevated);
+}
+
+.status-idle::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 12px;
+  height: 12px;
+  background: var(--amber);
+  border-radius: 50%;
+  border: 2px solid var(--bg-elevated);
+}
+
+.status-error::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 12px;
+  height: 12px;
+  background: var(--rose);
+  border-radius: 50%;
+  border: 2px solid var(--bg-elevated);
+}
+
+/* Priority bars */
+.priority-high { background: var(--rose); }
+.priority-medium { background: var(--amber); }
+.priority-low { background: var(--emerald); }
+
+/* Status badges */
+.badge-waiting {
+  background: rgba(59, 130, 246, 0.1);
+  color: var(--blue);
+}
+
+.badge-assigned {
+  background: rgba(139, 92, 246, 0.1);
+  color: var(--violet);
+}
+
+/* Activity icons */
+.activity-success {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--emerald);
+}
+
+.activity-pending {
+  background: rgba(59, 130, 246, 0.1);
+  color: var(--blue);
+}
+
+.activity-warning {
+  background: rgba(245, 158, 11, 0.1);
+  color: var(--amber);
+}
+
+.activity-error {
+  background: rgba(244, 63, 94, 0.1);
+  color: var(--rose);
+}
+
+/* Stat icon backgrounds */
+.stat-icon-cyan {
+  background: rgba(0, 240, 255, 0.1);
+  color: var(--cyan-glow);
+}
+
+.stat-icon-emerald {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--emerald);
+}
+
+.stat-icon-amber {
+  background: rgba(245, 158, 11, 0.1);
+  color: var(--amber);
+}
+
+.stat-icon-violet {
+  background: rgba(139, 92, 246, 0.1);
+  color: var(--violet);
+}
+
+/* Chart bar gradients */
+.bar-completed {
+  background: linear-gradient(180deg, var(--emerald), rgba(16, 185, 129, 0.3));
+}
+
+.bar-pending {
+  background: linear-gradient(180deg, var(--amber), rgba(245, 158, 11, 0.3));
+}
+
+/* Button primary gradient */
+.btn-primary-gradient {
+  background: linear-gradient(135deg, var(--cyan-glow), var(--blue));
+  box-shadow: var(--glow-cyan);
+  transition: all 0.2s ease;
+}
+
+.btn-primary-gradient:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 30px rgba(0, 240, 255, 0.4);
+}
+
+/* Tab styles */
+.tab-container {
+  background: var(--bg-elevated);
+  padding: 4px;
+  border-radius: 8px;
+}
+
+.tab-item {
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tab-item:hover {
+  color: var(--text-secondary);
+}
+
+.tab-item.active {
+  background: var(--bg-card);
+  color: var(--text-primary);
 }
