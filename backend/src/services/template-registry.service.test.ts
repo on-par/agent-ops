@@ -685,13 +685,13 @@ describe("TemplateRegistryService", () => {
       const template1: CreateAgentTemplate = {
         name: "Template 1",
         createdBy: "user-1",
-        systemPrompt: "First template.",
+        systemPrompt: "First template with sufficient length for validation.",
       };
 
       const template2: CreateAgentTemplate = {
         name: "Template 2",
         createdBy: "user-2",
-        systemPrompt: "Second template.",
+        systemPrompt: "Second template with sufficient length for validation.",
       };
 
       const created1 = await service.register(template1);
@@ -780,13 +780,13 @@ describe("TemplateRegistryService", () => {
       const template1: CreateAgentTemplate = {
         name: "Template 1",
         createdBy: "user-1",
-        systemPrompt: "First template.",
+        systemPrompt: "First template with sufficient length for validation.",
       };
 
       const template2: CreateAgentTemplate = {
         name: "Existing Name",
         createdBy: "user-2",
-        systemPrompt: "Second template.",
+        systemPrompt: "Second template with sufficient length for validation.",
       };
 
       const created1 = await service.register(template1);
@@ -896,8 +896,9 @@ describe("TemplateRegistryService", () => {
         systemPrompt: "Valid system prompt for testing.",
       };
 
+      // Zod schema validation catches this first
       await expect(service.register(template)).rejects.toThrow(
-        "Template name cannot be empty"
+        "Template validation failed"
       );
     });
 
@@ -920,8 +921,9 @@ describe("TemplateRegistryService", () => {
         systemPrompt: "",
       };
 
+      // Zod schema validation catches this first
       await expect(service.register(template)).rejects.toThrow(
-        "System prompt cannot be empty"
+        "Template validation failed"
       );
     });
 
