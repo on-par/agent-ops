@@ -38,26 +38,33 @@ describe('useWorkItems', () => {
 
   describe('useWorkItems', () => {
     it('should fetch all work items', async () => {
-      const mockWorkItems = [
+      const now = Date.now();
+      const mockApiResponse = [
         {
           id: '1',
           title: 'Test Item 1',
           status: 'PENDING' as const,
           priority: 'high' as const,
-          createdAt: new Date().toISOString(),
+          createdAt: now,
         },
         {
           id: '2',
           title: 'Test Item 2',
           status: 'IN_PROGRESS' as const,
           priority: 'medium' as const,
-          createdAt: new Date().toISOString(),
+          createdAt: now,
         },
       ];
 
+      const expectedWorkItems = mockApiResponse.map(item => ({
+        ...item,
+        createdAt: new Date(item.createdAt),
+      }));
+
       (global.fetch as any).mockResolvedValueOnce({
         ok: true,
-        json: async () => mockWorkItems,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({ success: true, data: mockApiResponse }),
       });
 
       const { result } = renderHook(() => useWorkItems(), {
@@ -70,9 +77,12 @@ describe('useWorkItems', () => {
         expect(result.current.isSuccess).toBe(true);
       });
 
-      expect(result.current.data).toEqual(mockWorkItems);
+      expect(result.current.data).toEqual(expectedWorkItems);
       expect(global.fetch).toHaveBeenCalledWith(
-        'http://localhost:3000/api/work-items'
+        '/api/work-items',
+        expect.objectContaining({
+          method: 'GET',
+        })
       );
     });
 
@@ -80,6 +90,11 @@ describe('useWorkItems', () => {
       (global.fetch as any).mockResolvedValueOnce({
         ok: false,
         status: 500,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({
+          success: false,
+          error: { message: 'Internal server error', code: 'SERVER_ERROR' },
+        }),
       });
 
       const { result } = renderHook(() => useWorkItems(), {
@@ -96,17 +111,24 @@ describe('useWorkItems', () => {
 
   describe('useWorkItem', () => {
     it('should fetch a single work item', async () => {
-      const mockWorkItem = {
+      const now = Date.now();
+      const mockApiResponse = {
         id: '1',
         title: 'Test Item',
         status: 'PENDING' as const,
         priority: 'high' as const,
-        createdAt: new Date().toISOString(),
+        createdAt: now,
+      };
+
+      const expectedWorkItem = {
+        ...mockApiResponse,
+        createdAt: new Date(now),
       };
 
       (global.fetch as any).mockResolvedValueOnce({
         ok: true,
-        json: async () => mockWorkItem,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({ success: true, data: mockApiResponse }),
       });
 
       const { result } = renderHook(() => useWorkItem('1'), {
@@ -117,9 +139,12 @@ describe('useWorkItems', () => {
         expect(result.current.isSuccess).toBe(true);
       });
 
-      expect(result.current.data).toEqual(mockWorkItem);
+      expect(result.current.data).toEqual(expectedWorkItem);
       expect(global.fetch).toHaveBeenCalledWith(
-        'http://localhost:3000/api/work-items/1'
+        '/api/work-items/1',
+        expect.objectContaining({
+          method: 'GET',
+        })
       );
     });
 
@@ -135,22 +160,29 @@ describe('useWorkItems', () => {
 
   describe('useCreateWorkItem', () => {
     it('should create a work item', async () => {
+      const now = Date.now();
       const newItem = {
         title: 'New Item',
         description: 'Test description',
         priority: 'medium' as const,
       };
 
-      const createdItem = {
+      const mockApiResponse = {
         id: '3',
         ...newItem,
         status: 'PENDING' as const,
-        createdAt: new Date().toISOString(),
+        createdAt: now,
+      };
+
+      const expectedCreatedItem = {
+        ...mockApiResponse,
+        createdAt: new Date(now),
       };
 
       (global.fetch as any).mockResolvedValueOnce({
         ok: true,
-        json: async () => createdItem,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({ success: true, data: mockApiResponse }),
       });
 
       const { result } = renderHook(() => useCreateWorkItem(), {
@@ -163,9 +195,9 @@ describe('useWorkItems', () => {
         expect(result.current.isSuccess).toBe(true);
       });
 
-      expect(result.current.data).toEqual(createdItem);
+      expect(result.current.data).toEqual(expectedCreatedItem);
       expect(global.fetch).toHaveBeenCalledWith(
-        'http://localhost:3000/api/work-items',
+        '/api/work-items',
         expect.objectContaining({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -178,6 +210,11 @@ describe('useWorkItems', () => {
       (global.fetch as any).mockResolvedValueOnce({
         ok: false,
         status: 400,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({
+          success: false,
+          error: { message: 'Validation error', code: 'VALIDATION_ERROR' },
+        }),
       });
 
       const { result } = renderHook(() => useCreateWorkItem(), {
@@ -199,21 +236,28 @@ describe('useWorkItems', () => {
 
   describe('useUpdateWorkItem', () => {
     it('should update a work item', async () => {
+      const now = Date.now();
       const updates = {
         title: 'Updated Title',
         status: 'COMPLETED' as const,
       };
 
-      const updatedItem = {
+      const mockApiResponse = {
         id: '1',
         ...updates,
         priority: 'high' as const,
-        createdAt: new Date().toISOString(),
+        createdAt: now,
+      };
+
+      const expectedUpdatedItem = {
+        ...mockApiResponse,
+        createdAt: new Date(now),
       };
 
       (global.fetch as any).mockResolvedValueOnce({
         ok: true,
-        json: async () => updatedItem,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({ success: true, data: mockApiResponse }),
       });
 
       const { result } = renderHook(() => useUpdateWorkItem(), {
@@ -226,9 +270,9 @@ describe('useWorkItems', () => {
         expect(result.current.isSuccess).toBe(true);
       });
 
-      expect(result.current.data).toEqual(updatedItem);
+      expect(result.current.data).toEqual(expectedUpdatedItem);
       expect(global.fetch).toHaveBeenCalledWith(
-        'http://localhost:3000/api/work-items/1',
+        '/api/work-items/1',
         expect.objectContaining({
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -242,6 +286,8 @@ describe('useWorkItems', () => {
     it('should delete a work item', async () => {
       (global.fetch as any).mockResolvedValueOnce({
         ok: true,
+        status: 204,
+        headers: new Headers({ 'content-type': 'text/plain' }),
       });
 
       const { result } = renderHook(() => useDeleteWorkItem(), {
@@ -255,7 +301,7 @@ describe('useWorkItems', () => {
       });
 
       expect(global.fetch).toHaveBeenCalledWith(
-        'http://localhost:3000/api/work-items/1',
+        '/api/work-items/1',
         expect.objectContaining({
           method: 'DELETE',
         })
@@ -266,6 +312,11 @@ describe('useWorkItems', () => {
       (global.fetch as any).mockResolvedValueOnce({
         ok: false,
         status: 404,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({
+          success: false,
+          error: { message: 'Not found', code: 'NOT_FOUND' },
+        }),
       });
 
       const { result } = renderHook(() => useDeleteWorkItem(), {

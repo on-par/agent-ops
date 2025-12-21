@@ -5,9 +5,9 @@ import type { ReactNode } from 'react';
 import {
   useWorkers,
   useWorker,
-  useCreateWorker,
-  useUpdateWorker,
-  useDeleteWorker,
+  useSpawnWorker,
+  useControlWorker,
+  useTerminateWorker,
   usePauseWorker,
   useResumeWorker,
 } from '../../hooks/useWorkers';
@@ -60,7 +60,8 @@ describe('useWorkers', () => {
 
       (global.fetch as any).mockResolvedValueOnce({
         ok: true,
-        json: async () => mockWorkers,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({ success: true, data: mockWorkers }),
       });
 
       const { result } = renderHook(() => useWorkers(), {
@@ -75,7 +76,10 @@ describe('useWorkers', () => {
 
       expect(result.current.data).toEqual(mockWorkers);
       expect(global.fetch).toHaveBeenCalledWith(
-        'http://localhost:3000/api/workers'
+        '/api/workers',
+        expect.objectContaining({
+          method: 'GET',
+        })
       );
     });
 
@@ -83,6 +87,11 @@ describe('useWorkers', () => {
       (global.fetch as any).mockResolvedValueOnce({
         ok: false,
         status: 500,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({
+          success: false,
+          error: { message: 'Internal server error', code: 'SERVER_ERROR' },
+        }),
       });
 
       const { result } = renderHook(() => useWorkers(), {
@@ -110,7 +119,8 @@ describe('useWorkers', () => {
 
       (global.fetch as any).mockResolvedValueOnce({
         ok: true,
-        json: async () => mockWorker,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({ success: true, data: mockWorker }),
       });
 
       const { result } = renderHook(() => useWorker('worker-1'), {
@@ -123,7 +133,10 @@ describe('useWorkers', () => {
 
       expect(result.current.data).toEqual(mockWorker);
       expect(global.fetch).toHaveBeenCalledWith(
-        'http://localhost:3000/api/workers/worker-1'
+        '/api/workers/worker-1',
+        expect.objectContaining({
+          method: 'GET',
+        })
       );
     });
 
@@ -137,26 +150,27 @@ describe('useWorkers', () => {
     });
   });
 
-  describe('useCreateWorker', () => {
-    it('should create a worker', async () => {
+  describe('useSpawnWorker', () => {
+    it('should spawn a worker', async () => {
       const newWorker = {
         name: 'New Worker',
-        status: 'idle' as const,
       };
 
-      const createdWorker = {
+      const spawnedWorker = {
         id: 'worker-3',
-        ...newWorker,
+        name: newWorker.name,
+        status: 'idle' as const,
         tasksCompleted: 0,
         successRate: 0,
       };
 
       (global.fetch as any).mockResolvedValueOnce({
         ok: true,
-        json: async () => createdWorker,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({ success: true, data: spawnedWorker }),
       });
 
-      const { result } = renderHook(() => useCreateWorker(), {
+      const { result } = renderHook(() => useSpawnWorker(), {
         wrapper: createWrapper(),
       });
 
@@ -166,9 +180,9 @@ describe('useWorkers', () => {
         expect(result.current.isSuccess).toBe(true);
       });
 
-      expect(result.current.data).toEqual(createdWorker);
+      expect(result.current.data).toEqual(spawnedWorker);
       expect(global.fetch).toHaveBeenCalledWith(
-        'http://localhost:3000/api/workers',
+        '/api/workers',
         expect.objectContaining({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -177,19 +191,23 @@ describe('useWorkers', () => {
       );
     });
 
-    it('should handle creation error', async () => {
+    it('should handle spawn error', async () => {
       (global.fetch as any).mockResolvedValueOnce({
         ok: false,
         status: 400,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({
+          success: false,
+          error: { message: 'Validation error', code: 'VALIDATION_ERROR' },
+        }),
       });
 
-      const { result } = renderHook(() => useCreateWorker(), {
+      const { result } = renderHook(() => useSpawnWorker(), {
         wrapper: createWrapper(),
       });
 
       result.current.mutate({
         name: 'New Worker',
-        status: 'active' as const,
       });
 
       await waitFor(() => {
@@ -200,54 +218,55 @@ describe('useWorkers', () => {
     });
   });
 
-  describe('useUpdateWorker', () => {
-    it('should update a worker', async () => {
-      const updates = {
-        name: 'Updated Worker',
-        status: 'active' as const,
-      };
+  describe('useControlWorker', () => {
+    it('should control a worker', async () => {
+      const action = { action: 'pause' as const };
 
-      const updatedWorker = {
+      const controlledWorker = {
         id: 'worker-1',
-        ...updates,
+        name: 'Test Worker',
+        status: 'paused' as const,
         tasksCompleted: 150,
         successRate: 99.0,
       };
 
       (global.fetch as any).mockResolvedValueOnce({
         ok: true,
-        json: async () => updatedWorker,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({ success: true, data: controlledWorker }),
       });
 
-      const { result } = renderHook(() => useUpdateWorker(), {
+      const { result } = renderHook(() => useControlWorker(), {
         wrapper: createWrapper(),
       });
 
-      result.current.mutate({ id: 'worker-1', data: updates });
+      result.current.mutate({ id: 'worker-1', action });
 
       await waitFor(() => {
         expect(result.current.isSuccess).toBe(true);
       });
 
-      expect(result.current.data).toEqual(updatedWorker);
+      expect(result.current.data).toEqual(controlledWorker);
       expect(global.fetch).toHaveBeenCalledWith(
-        'http://localhost:3000/api/workers/worker-1',
+        '/api/workers/worker-1/control',
         expect.objectContaining({
-          method: 'PATCH',
+          method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(updates),
+          body: JSON.stringify(action),
         })
       );
     });
   });
 
-  describe('useDeleteWorker', () => {
-    it('should delete a worker', async () => {
+  describe('useTerminateWorker', () => {
+    it('should terminate a worker', async () => {
       (global.fetch as any).mockResolvedValueOnce({
         ok: true,
+        status: 204,
+        headers: new Headers({ 'content-type': 'text/plain' }),
       });
 
-      const { result } = renderHook(() => useDeleteWorker(), {
+      const { result } = renderHook(() => useTerminateWorker(), {
         wrapper: createWrapper(),
       });
 
@@ -258,20 +277,25 @@ describe('useWorkers', () => {
       });
 
       expect(global.fetch).toHaveBeenCalledWith(
-        'http://localhost:3000/api/workers/worker-1',
+        '/api/workers/worker-1',
         expect.objectContaining({
           method: 'DELETE',
         })
       );
     });
 
-    it('should handle deletion error', async () => {
+    it('should handle termination error', async () => {
       (global.fetch as any).mockResolvedValueOnce({
         ok: false,
         status: 404,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({
+          success: false,
+          error: { message: 'Not found', code: 'NOT_FOUND' },
+        }),
       });
 
-      const { result } = renderHook(() => useDeleteWorker(), {
+      const { result } = renderHook(() => useTerminateWorker(), {
         wrapper: createWrapper(),
       });
 
@@ -297,7 +321,8 @@ describe('useWorkers', () => {
 
       (global.fetch as any).mockResolvedValueOnce({
         ok: true,
-        json: async () => pausedWorker,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({ success: true, data: pausedWorker }),
       });
 
       const { result } = renderHook(() => usePauseWorker(), {
@@ -312,9 +337,11 @@ describe('useWorkers', () => {
 
       expect(result.current.data).toEqual(pausedWorker);
       expect(global.fetch).toHaveBeenCalledWith(
-        'http://localhost:3000/api/workers/worker-1/pause',
+        '/api/workers/worker-1/control',
         expect.objectContaining({
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'pause' }),
         })
       );
     });
@@ -332,7 +359,8 @@ describe('useWorkers', () => {
 
       (global.fetch as any).mockResolvedValueOnce({
         ok: true,
-        json: async () => resumedWorker,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({ success: true, data: resumedWorker }),
       });
 
       const { result } = renderHook(() => useResumeWorker(), {
@@ -347,9 +375,11 @@ describe('useWorkers', () => {
 
       expect(result.current.data).toEqual(resumedWorker);
       expect(global.fetch).toHaveBeenCalledWith(
-        'http://localhost:3000/api/workers/worker-1/resume',
+        '/api/workers/worker-1/control',
         expect.objectContaining({
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'resume' }),
         })
       );
     });
