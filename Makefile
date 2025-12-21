@@ -17,16 +17,10 @@ run:
 
 # Stop running processes
 stop:
-	@if [ -f /tmp/agent-ops-backend.pid ]; then \
-		kill $$(cat /tmp/agent-ops-backend.pid) 2>/dev/null || true; \
-		rm -f /tmp/agent-ops-backend.pid; \
-		echo "Backend stopped"; \
-	fi
-	@if [ -f /tmp/agent-ops-frontend.pid ]; then \
-		kill $$(cat /tmp/agent-ops-frontend.pid) 2>/dev/null || true; \
-		rm -f /tmp/agent-ops-frontend.pid; \
-		echo "Frontend stopped"; \
-	fi
+	@echo "Stopping agent-ops processes..."
+	@pkill -f "agent-ops/(frontend|backend)/node_modules" 2>/dev/null || true
+	@rm -f /tmp/agent-ops-backend.pid /tmp/agent-ops-frontend.pid
+	@echo "All agent-ops processes stopped"
 
 # Tail logs from both processes
 logs:
