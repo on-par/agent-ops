@@ -382,15 +382,21 @@ export class ObservabilityService {
       .orderBy(desc(traces.timestamp))
       .limit(1);
 
-    return {
+    const metrics: WorkerMetrics = {
       workerId,
       tokensUsed: worker.tokensUsed,
       costUsd: worker.costUsd,
       toolCalls: worker.toolCalls,
       errors: worker.errors,
       totalTraces,
-      lastActivity: lastTrace?.timestamp ?? undefined,
     };
+
+    // Add lastActivity only if it exists
+    if (lastTrace?.timestamp) {
+      metrics.lastActivity = lastTrace.timestamp;
+    }
+
+    return metrics;
   }
 
   /**

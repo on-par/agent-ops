@@ -70,11 +70,19 @@ export type AgentTemplate = z.infer<typeof AgentTemplateSchema>;
 
 /**
  * Schema for creating a new agent template (without auto-generated fields)
+ * Fields with defaults are marked as optional for the input type
  */
 export const CreateAgentTemplateSchema = AgentTemplateSchema.omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  description: z.string().default("").optional(),
+  permissionMode: PermissionModeSchema.default("askUser").optional(),
+  maxTurns: z.number().int().positive().default(100).optional(),
+  builtinTools: z.array(z.string()).default([]).optional(),
+  mcpServers: z.array(MCPServerConfigSchema).default([]).optional(),
+  allowedWorkItemTypes: z.array(z.string()).default(["*"]).optional(),
 });
 export type CreateAgentTemplate = z.infer<typeof CreateAgentTemplateSchema>;
 

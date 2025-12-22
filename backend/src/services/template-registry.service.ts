@@ -51,12 +51,23 @@ export class TemplateRegistryService {
     const now = new Date();
     const newTemplate = {
       id: randomUUID(),
-      ...template,
+      name: template.name,
+      description: template.description ?? "",
+      createdBy: template.createdBy,
+      systemPrompt: template.systemPrompt,
+      permissionMode: template.permissionMode ?? "askUser",
+      maxTurns: template.maxTurns ?? 100,
+      builtinTools: template.builtinTools ?? [],
+      mcpServers: template.mcpServers ?? [],
+      allowedWorkItemTypes: template.allowedWorkItemTypes ?? ["*"],
+      defaultRole: template.defaultRole,
       createdAt: now,
       updatedAt: now,
     };
 
-    return await this.repository.create(newTemplate);
+    // Type assertion needed due to exactOptionalPropertyTypes strict mode
+    // The Zod schema and DB schema have slight differences in optional field handling
+    return await this.repository.create(newTemplate as any);
   }
 
   /**
@@ -195,13 +206,15 @@ export class TemplateRegistryService {
         mcpServers: updates.mcpServers ?? existing.mcpServers,
         allowedWorkItemTypes:
           updates.allowedWorkItemTypes ?? existing.allowedWorkItemTypes,
-        defaultRole: updates.defaultRole ?? existing.defaultRole,
+        defaultRole:
+          updates.defaultRole ?? (existing.defaultRole ?? undefined),
       };
 
       await this.validate(mergedTemplate);
     }
 
-    return await this.repository.update(templateId, updates);
+    // Type assertion needed due to exactOptionalPropertyTypes strict mode
+    return await this.repository.update(templateId, updates as any);
   }
 
   /**
@@ -230,47 +243,48 @@ export class TemplateRegistryService {
       throw new Error("System prompt must be at least 20 characters");
     }
 
-    // Max turns validation (use default if not provided)
-    const maxTurns = template.maxTurns ?? 100;
-    if (maxTurns < 1) {
-      throw new Error("Max turns must be at least 1");
-    }
-
-    if (maxTurns > 1000) {
-      throw new Error("Max turns cannot exceed 1000");
-    }
-
-    // Work item types validation (use default if not provided)
-    const allowedWorkItemTypes = template.allowedWorkItemTypes ?? ["*"];
-    if (allowedWorkItemTypes.length === 0) {
-      throw new Error(
-        "At least one allowed work item type must be specified (use ['*'] for all)"
-      );
-    }
-
-    // MCP servers validation (use default if not provided)
-    const mcpServers = template.mcpServers ?? [];
-    for (const server of mcpServers) {
-      if (!server.name || server.name.trim().length === 0) {
-        throw new Error("MCP server name cannot be empty");
+    // Max turns validation
+    if (template.maxTurns !== undefined) {
+      if (template.maxTurns < 1) {
+        throw new Error("Max turns must be at least 1");
       }
 
-      if (server.type === "stdio" && !server.command) {
-        throw new Error(
-          `MCP server '${server.name}' with type 'stdio' must have a command`
-        );
+      if (template.maxTurns > 1000) {
+        throw new Error("Max turns cannot exceed 1000");
       }
+    }
 
-      if (server.type === "sse" && !server.url) {
+    // Work item types validation
+    if (template.allowedWorkItemTypes !== undefined) {
+      if (template.allowedWorkItemTypes.length === 0) {
         throw new Error(
-          `MCP server '${server.name}' with type 'sse' must have a URL`
+          "At least one allowed work item type must be specified (use ['*'] for all)"
         );
       }
     }
 
-    // Check for duplicate MCP server names
-    if (mcpServers.length > 0) {
-      const serverNames = mcpServers.map((s) => s.name.toLowerCase());
+    // MCP servers validation
+    if (template.mcpServers !== undefined && template.mcpServers.length > 0) {
+      for (const server of template.mcpServers) {
+        if (!server.name || server.name.trim().length === 0) {
+          throw new Error("MCP server name cannot be empty");
+        }
+
+        if (server.type === "stdio" && !server.command) {
+          throw new Error(
+            `MCP server '${server.name}' with type 'stdio' must have a command`
+          );
+        }
+
+        if (server.type === "sse" && !server.url) {
+          throw new Error(
+            `MCP server '${server.name}' with type 'sse' must have a URL`
+          );
+        }
+      }
+
+      // Check for duplicate MCP server names
+      const serverNames = template.mcpServers.map((s) => s.name.toLowerCase());
       const uniqueNames = new Set(serverNames);
       if (serverNames.length !== uniqueNames.size) {
         throw new Error("MCP server names must be unique within a template");
@@ -309,7 +323,8 @@ export class TemplateRegistryService {
       builtinTools: [...source.builtinTools],
       mcpServers: source.mcpServers.map((s) => ({ ...s })),
       allowedWorkItemTypes: [...source.allowedWorkItemTypes],
-      defaultRole: source.defaultRole,
+      // Only include defaultRole if it exists
+      ...(source.defaultRole && { defaultRole: source.defaultRole }),
     };
 
     return await this.register(clonedTemplate);
