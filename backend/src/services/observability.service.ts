@@ -1,7 +1,10 @@
 import { eq, and, gte, lte, desc, sql, count } from "drizzle-orm";
 import { randomUUID } from "crypto";
+import { trace, SpanKind, SpanStatusCode, type Span } from "@opentelemetry/api";
 import type { DrizzleDatabase } from "../db/index.js";
 import { traces, workers, type NewTrace, type TraceEventType, type Trace } from "../db/schema.js";
+
+const tracer = trace.getTracer("agent-ops");
 
 /**
  * Query options for filtering traces
@@ -125,6 +128,57 @@ export interface ApprovalRequiredData {
 }
 
 /**
+ * Flatten nested data objects for OpenTelemetry span attributes
+ * Converts nested objects into dot-notation keys with primitive values
+ * @param data - The data object to flatten
+ * @param prefix - Optional prefix for nested keys
+ * @returns Flattened object with string keys and primitive values
+ */
+function flattenData(
+  data: unknown,
+  prefix: string = ""
+): Record<string, string | number | boolean> {
+  const result: Record<string, string | number | boolean> = {};
+
+  if (data === null || data === undefined) {
+    return result;
+  }
+
+  if (typeof data !== "object") {
+    // If it's a primitive, just return it with the prefix
+    if (prefix) {
+      result[prefix] = String(data);
+    }
+    return result;
+  }
+
+  // Handle arrays by converting to JSON strings
+  if (Array.isArray(data)) {
+    result[prefix || "array"] = JSON.stringify(data);
+    return result;
+  }
+
+  // Handle objects
+  for (const [key, value] of Object.entries(data)) {
+    const newKey = prefix ? `${prefix}.${key}` : key;
+
+    if (value === null || value === undefined) {
+      result[newKey] = "null";
+    } else if (typeof value === "object") {
+      // Recursively flatten nested objects
+      Object.assign(result, flattenData(value, newKey));
+    } else if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      result[newKey] = value;
+    } else {
+      // For any other type, stringify it
+      result[newKey] = String(value);
+    }
+  }
+
+  return result;
+}
+
+/**
  * ObservabilityService
  * Provides comprehensive tracing and metrics capabilities for agent operations
  */
@@ -139,6 +193,18 @@ export class ObservabilityService {
    * @returns The created trace
    */
   async recordTrace(trace: Omit<NewTrace, "id" | "timestamp">): Promise<Trace> {
+    // Emit OpenTelemetry span
+    const span = tracer.startSpan(trace.eventType, {
+      kind: SpanKind.INTERNAL,
+      attributes: {
+        "agent.worker_id": trace.workerId ?? undefined,
+        "agent.work_item_id": trace.workItemId ?? undefined,
+        ...flattenData(trace.data),
+      },
+    });
+    span.end();
+
+    // Keep existing SQLite insert logic
     const newTrace: NewTrace = {
       id: randomUUID(),
       workerId: trace.workerId,
@@ -259,6 +325,18 @@ export class ObservabilityService {
       workItemId: null,
       eventType: "metric_update",
       data,
+    });
+  }
+
+  /**
+   * Start a custom OpenTelemetry span for agent operations
+   * @param name - Span name
+   * @param workerId - Worker ID
+   * @returns OpenTelemetry span that should be ended when the operation completes
+   */
+  startAgentSpan(name: string, workerId: string): Span {
+    return tracer.startSpan(name, {
+      attributes: { "agent.worker_id": workerId },
     });
   }
 

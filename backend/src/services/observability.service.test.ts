@@ -363,6 +363,31 @@ describe("ObservabilityService", () => {
     });
   });
 
+  describe("startAgentSpan", () => {
+    it("should create a custom OpenTelemetry span", () => {
+      const span = service.startAgentSpan("custom-operation", testWorkerId);
+
+      expect(span).toBeDefined();
+      expect(typeof span.end).toBe("function");
+      expect(typeof span.setAttribute).toBe("function");
+
+      // Clean up by ending the span
+      span.end();
+    });
+
+    it("should allow setting additional attributes on the span", () => {
+      const span = service.startAgentSpan("test-operation", testWorkerId);
+
+      // Should be able to set additional attributes
+      expect(() => {
+        span.setAttribute("custom.attribute", "test-value");
+        span.setAttribute("custom.number", 42);
+      }).not.toThrow();
+
+      span.end();
+    });
+  });
+
   // ==================== TRACE QUERY TESTS ====================
 
   describe("getTraces", () => {
