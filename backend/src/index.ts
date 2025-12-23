@@ -1,5 +1,9 @@
+import { initTelemetry } from "./telemetry.js";
 import { buildApp } from "./app.js";
 import { loadConfig, getListenOptions } from "./config.js";
+
+// Initialize OpenTelemetry before anything else
+initTelemetry();
 
 async function main(): Promise<void> {
   const config = loadConfig();

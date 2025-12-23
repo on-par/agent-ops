@@ -4,3 +4,7 @@ dist
 *.db
 .DS_Store
 .playwright-mcp
+
+# .NET build artifacts
+**/bin/
+**/obj/
