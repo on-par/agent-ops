@@ -14,7 +14,6 @@ import {
   Bot,
   Zap,
   Database,
-  Mail,
 } from "lucide-react";
 
 // Settings sections

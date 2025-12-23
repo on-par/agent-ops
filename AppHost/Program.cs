@@ -9,6 +9,7 @@ var backend = builder.AddNpmApp("backend", "../backend", "dev")
 var frontend = builder.AddNpmApp("frontend", "../frontend", "dev")
     .WithHttpEndpoint(port: 5173, env: "PORT")
     .WithExternalHttpEndpoints()
+    .WithEnvironment("VITE_API_URL", backend.GetEndpoint("http"))
     .WithReference(backend);
 
 builder.Build().Run();
