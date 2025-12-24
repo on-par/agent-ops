@@ -104,18 +104,28 @@ else
 fi
 
 # Build the command (pass through CLAUDE_CMD and WORKER_DIR)
-WORKER_CMD="WORKER_DIR='$WORK_DIR'"
+# Must use bash -c because tmux doesn't interpret VAR=value syntax directly
+# Use double quotes throughout and escape embedded double quotes
+WORKER_CMD="WORKER_DIR=\"$WORK_DIR\""
 if [ -n "${CLAUDE_CMD:-}" ]; then
-    WORKER_CMD="$WORKER_CMD CLAUDE_CMD='$CLAUDE_CMD'"
+    # Escape double quotes in CLAUDE_CMD
+    ESCAPED_CLAUDE_CMD="${CLAUDE_CMD//\"/\\\"}"
+    WORKER_CMD="$WORKER_CMD CLAUDE_CMD=\"$ESCAPED_CLAUDE_CMD\""
 fi
-WORKER_CMD="$WORKER_CMD $WORKER_SCRIPT"
+WORKER_CMD="$WORKER_CMD \"$WORKER_SCRIPT\""
 if [ ${#WORKER_ARGS[@]} -gt 0 ]; then
-    WORKER_CMD="$WORKER_CMD ${WORKER_ARGS[*]}"
+    for arg in "${WORKER_ARGS[@]}"; do
+        # Escape double quotes in args
+        ESCAPED_ARG="${arg//\"/\\\"}"
+        WORKER_CMD="$WORKER_CMD \"$ESCAPED_ARG\""
+    done
 fi
 
 # Create detached tmux session running the worker
 # Session auto-closes when worker finishes
-tmux new-session -d -s "$SESSION_NAME" -c "$WORK_DIR" "$WORKER_CMD"
+# Use double quotes for bash -c to allow variable expansion, escape inner quotes
+ESCAPED_WORKER_CMD="${WORKER_CMD//\"/\\\"}"
+tmux new-session -d -s "$SESSION_NAME" -c "$WORK_DIR" "bash -c \"$ESCAPED_WORKER_CMD\""
 
 echo -e "${GREEN}Worker started!${NC}"
 echo ""
