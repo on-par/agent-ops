@@ -16,3 +16,4 @@ test-results/
 
 # Temporary files created by Claude runs
 .claude-runs/
+.mcp*.json
