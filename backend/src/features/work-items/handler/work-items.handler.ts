@@ -4,10 +4,10 @@ import type { WorkItemService } from "../services/work-item.service.js";
 import {
   WorkItemStatusSchema,
   WorkItemTypeSchema,
-} from "../models/work-item.js";
-import { agentRoles, type AgentRole } from "../db/schema.js";
+} from "../../../models/work-item.js";
+import { agentRoles, type AgentRole } from "../../../db/schema.js";
 
-export interface WorkItemRoutesOptions extends FastifyPluginOptions {
+export interface WorkItemHandlerOptions extends FastifyPluginOptions {
   service: WorkItemService;
 }
 
@@ -65,12 +65,12 @@ const QueryParamsSchema = z.object({
 });
 
 /**
- * Work Items REST Routes
+ * Work Items REST Handler
  * Provides CRUD and workflow operations for work items
  */
-export async function workItemsRoutes(
+export async function workItemsHandler(
   app: FastifyInstance,
-  options: WorkItemRoutesOptions
+  options: WorkItemHandlerOptions
 ): Promise<void> {
   const { service } = options;
 

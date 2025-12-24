@@ -3,7 +3,7 @@ import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import * as schema from "../db/schema.js";
 import { WorkflowEngineService } from "./workflow-engine.service.js";
-import { WorkItemRepository } from "../repositories/work-item.repository.js";
+import { WorkItemRepository } from "../features/work-items/repositories/work-item.repository.js";
 import { WorkerRepository } from "../repositories/worker.repository.js";
 import type { NewWorkItem, NewWorker, NewTemplate } from "../db/schema.js";
 import { v4 as uuidv4 } from "uuid";

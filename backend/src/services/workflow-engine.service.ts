@@ -1,4 +1,4 @@
-import type { WorkItemRepository } from "../repositories/work-item.repository.js";
+import type { WorkItemRepository } from "../features/work-items/repositories/work-item.repository.js";
 import type { WorkerRepository } from "../repositories/worker.repository.js";
 import type {
   WorkItem,

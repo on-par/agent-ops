@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { v4 as uuidv4 } from "uuid";
 import type { DrizzleDatabase } from "../db/index.js";
 import { RepositoryRepository } from "../repositories/repository.repository.js";
-import { WorkItemRepository } from "../repositories/work-item.repository.js";
+import { WorkItemRepository } from "../features/work-items/repositories/work-item.repository.js";
 import type { WorkItemType, WorkItemStatus } from "../db/schema.js";
 
 // GitHub webhook event types we handle

@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Fastify, { type FastifyInstance } from "fastify";
-import * as schema from "../db/schema.js";
-import { workItemsRoutes } from "./work-items.routes.js";
+import * as schema from "../../../db/schema.js";
+import { workItemsHandler } from "../handler/work-items.handler.js";
 import { WorkItemRepository } from "../repositories/work-item.repository.js";
 import { WorkItemService } from "../services/work-item.service.js";
 
@@ -86,7 +86,7 @@ describe("Work Items Routes", () => {
 
     // Create Fastify app with routes
     app = Fastify({ logger: false });
-    await app.register(workItemsRoutes, { service });
+    await app.register(workItemsHandler, { service });
     await app.ready();
   });
 

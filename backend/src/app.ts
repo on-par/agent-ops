@@ -3,10 +3,10 @@ import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import type { Config } from "./config.js";
 import type { DrizzleDatabase } from "./db/index.js";
-import { WorkItemRepository } from "./repositories/work-item.repository.js";
-import { WorkItemService } from "./services/work-item.service.js";
+import { WorkItemRepository } from "./features/work-items/repositories/work-item.repository.js";
+import { WorkItemService } from "./features/work-items/services/work-item.service.js";
 import { ConcurrencyLimitsService } from "./services/orchestration.service.js";
-import { workItemsRoutes } from "./routes/work-items.routes.js";
+import { workItemsHandler } from "./features/work-items/handler/work-items.handler.js";
 import { githubAuthRoutes } from "./routes/github-auth.routes.js";
 import { githubWebhookRoutes } from "./routes/github-webhook.routes.js";
 import { repositoriesRoutes } from "./routes/repositories.routes.js";
@@ -53,7 +53,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   if (db) {
     const workItemRepository = new WorkItemRepository(db);
     const workItemService = new WorkItemService(workItemRepository);
-    await app.register(workItemsRoutes, {
+    await app.register(workItemsHandler, {
       prefix: "/api/work-items",
       service: workItemService,
     });

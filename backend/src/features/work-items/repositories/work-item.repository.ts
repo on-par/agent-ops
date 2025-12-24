@@ -1,12 +1,12 @@
 import { eq, and, inArray } from "drizzle-orm";
-import type { DrizzleDatabase } from "../db/index.js";
+import type { DrizzleDatabase } from "../../../db/index.js";
 import {
   workItems,
   type WorkItem,
   type NewWorkItem,
   type WorkItemStatus,
   type WorkItemType,
-} from "../db/schema.js";
+} from "../../../db/schema.js";
 
 /**
  * Repository for Work Item database operations

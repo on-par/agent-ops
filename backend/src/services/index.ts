@@ -7,7 +7,7 @@ export {
   WorkItemService,
   type CreateWorkItemInput,
   type UpdateWorkItemInput,
-} from "./work-item.service.js";
+} from "../features/work-items/services/work-item.service.js";
 
 export {
   WorkflowEngineService,
