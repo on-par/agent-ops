@@ -24,6 +24,11 @@ interface Config {
   maxConcurrentAgents: number;
   agentTimeoutMs: number;
   claudeModel: string;
+  // LLM Provider Configuration
+  llmProvider: "ollama" | "openai" | "anthropic" | "openrouter";
+  llmModel: string;
+  llmBaseUrl?: string;
+  llmApiKey?: string;
 }
 
 function getEnvVar(name: string, defaultValue?: string): string {
@@ -52,6 +57,8 @@ export function loadConfig(): Config {
   const isDevelopment = getEnvVar("NODE_ENV", "development") === "development";
   const baseUrl = getEnvVar("BASE_URL", `http://localhost:${port}`);
 
+  const llmProvider = getEnvVar("LLM_PROVIDER", "ollama") as "ollama" | "openai" | "anthropic" | "openrouter";
+
   return {
     port,
     host,
@@ -73,6 +80,11 @@ export function loadConfig(): Config {
     maxConcurrentAgents: parseInt(getEnvVar("MAX_CONCURRENT_AGENTS", "5"), 10),
     agentTimeoutMs: parseInt(getEnvVar("AGENT_TIMEOUT_MS", "600000"), 10), // 10 minutes
     claudeModel: getEnvVar("CLAUDE_MODEL", "claude-sonnet-4-20250514"),
+    // LLM Provider Configuration
+    llmProvider,
+    llmModel: getEnvVar("LLM_MODEL", "qwen2.5-coder:7b"),
+    llmBaseUrl: getEnvVar("LLM_BASE_URL", llmProvider === "ollama" ? "http://localhost:11434" : undefined),
+    llmApiKey: getEnvVar("LLM_API_KEY", undefined),
   };
 }
 
