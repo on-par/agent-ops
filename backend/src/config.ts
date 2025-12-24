@@ -14,6 +14,10 @@ interface Config {
   githubClientSecret: string;
   githubCallbackUrl: string;
   baseUrl: string;
+  // Concurrency limits (em3.5)
+  maxGlobalWorkers: number;
+  maxWorkersPerRepo: number;
+  maxWorkersPerUser: number;
 }
 
 function getEnvVar(name: string, defaultValue?: string): string {
@@ -53,6 +57,10 @@ export function loadConfig(): Config {
     githubClientSecret: getEnvVar("GITHUB_CLIENT_SECRET", ""),
     githubCallbackUrl: getEnvVar("GITHUB_CALLBACK_URL", `${baseUrl}/api/auth/github/callback`),
     baseUrl,
+    // Concurrency limits (em3.5)
+    maxGlobalWorkers: parseInt(getEnvVar("MAX_GLOBAL_WORKERS", "10"), 10),
+    maxWorkersPerRepo: parseInt(getEnvVar("MAX_WORKERS_PER_REPO", "3"), 10),
+    maxWorkersPerUser: parseInt(getEnvVar("MAX_WORKERS_PER_USER", "5"), 10),
   };
 }
 

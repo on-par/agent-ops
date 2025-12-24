@@ -5,11 +5,13 @@ import type { Config } from "./config.js";
 import type { DrizzleDatabase } from "./db/index.js";
 import { WorkItemRepository } from "./repositories/work-item.repository.js";
 import { WorkItemService } from "./services/work-item.service.js";
+import { ConcurrencyLimitsService } from "./services/orchestration.service.js";
 import { workItemsRoutes } from "./routes/work-items.routes.js";
 import { githubAuthRoutes } from "./routes/github-auth.routes.js";
 import { repositoriesRoutes } from "./routes/repositories.routes.js";
 import { pullRequestsRoutes } from "./routes/pull-requests.routes.js";
 import { agentRuntimeRoutes } from "./routes/agent-runtime.routes.js";
+import { concurrencyRoutes } from "./routes/concurrency.routes.js";
 
 const HEALTH_STATUS_OK = "ok";
 
@@ -79,6 +81,17 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
       prefix: "/api/agent-runtime",
       db,
       config,
+    });
+
+    // Concurrency limits routes (em3.5)
+    const concurrencyService = new ConcurrencyLimitsService({
+      maxGlobalWorkers: config.maxGlobalWorkers,
+      maxWorkersPerRepo: config.maxWorkersPerRepo,
+      maxWorkersPerUser: config.maxWorkersPerUser,
+    });
+    await app.register(concurrencyRoutes, {
+      prefix: "/api/concurrency",
+      concurrencyService,
     });
   }
 
