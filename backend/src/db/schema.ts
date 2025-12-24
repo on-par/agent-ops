@@ -54,6 +54,12 @@ export const workItems = sqliteTable("work_items", {
   type: text("type").notNull().$type<WorkItemType>(),
   status: text("status").notNull().$type<WorkItemStatus>().default("backlog"),
 
+  // GitHub Issue source (optional - for synced issues)
+  repositoryId: text("repository_id").references(() => repositories.id),
+  githubIssueId: integer("github_issue_id"),
+  githubIssueNumber: integer("github_issue_number"),
+  githubIssueUrl: text("github_issue_url"),
+
   // Content
   description: text("description").notNull().default(""),
   successCriteria: text("success_criteria", { mode: "json" })
@@ -189,6 +195,15 @@ export const traces = sqliteTable("traces", {
   timestamp: integer("timestamp", { mode: "timestamp_ms" }).notNull(),
 });
 
+// Repository sync statuses
+export const repoSyncStatuses = [
+  "pending",      // Never synced
+  "syncing",      // Currently syncing
+  "synced",       // Successfully synced
+  "error",        // Sync failed
+] as const;
+export type RepoSyncStatus = (typeof repoSyncStatuses)[number];
+
 // GitHub Connections table - stores OAuth tokens
 export const githubConnections = sqliteTable("github_connections", {
   id: text("id").primaryKey(),
@@ -214,6 +229,47 @@ export const githubConnections = sqliteTable("github_connections", {
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });
 
+// Connected Repositories table
+export const repositories = sqliteTable("repositories", {
+  id: text("id").primaryKey(),
+
+  // GitHub connection reference
+  connectionId: text("connection_id")
+    .notNull()
+    .references(() => githubConnections.id, { onDelete: "cascade" }),
+
+  // Repository identification
+  githubRepoId: integer("github_repo_id").notNull(),
+  owner: text("owner").notNull(),
+  name: text("name").notNull(),
+  fullName: text("full_name").notNull(), // owner/name
+  htmlUrl: text("html_url").notNull(),
+  description: text("description"),
+
+  // Repository settings
+  defaultBranch: text("default_branch").notNull().default("main"),
+  isPrivate: integer("is_private", { mode: "boolean" }).notNull().default(false),
+
+  // Sync configuration
+  syncEnabled: integer("sync_enabled", { mode: "boolean" }).notNull().default(true),
+  syncStatus: text("sync_status").notNull().$type<RepoSyncStatus>().default("pending"),
+  syncError: text("sync_error"),
+  lastSyncAt: integer("last_sync_at", { mode: "timestamp_ms" }),
+
+  // Issue sync settings
+  issueLabelsFilter: text("issue_labels_filter", { mode: "json" })
+    .notNull()
+    .$type<string[]>()
+    .default([]), // Empty = sync all issues
+  autoAssignAgents: integer("auto_assign_agents", { mode: "boolean" })
+    .notNull()
+    .default(false),
+
+  // Timestamps
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+});
+
 // Type exports for use in repositories
 export type WorkItem = typeof workItems.$inferSelect;
 export type NewWorkItem = typeof workItems.$inferInsert;
@@ -229,3 +285,6 @@ export type NewTrace = typeof traces.$inferInsert;
 
 export type GitHubConnection = typeof githubConnections.$inferSelect;
 export type NewGitHubConnection = typeof githubConnections.$inferInsert;
+
+export type Repository = typeof repositories.$inferSelect;
+export type NewRepository = typeof repositories.$inferInsert;

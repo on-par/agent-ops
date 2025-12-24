@@ -15,6 +15,13 @@
       "when": 1766549704641,
       "tag": "0001_overjoyed_lady_mastermind",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1766549939376,
+      "tag": "0002_bored_onslaught",
+      "breakpoints": true
     }
   ]
 }

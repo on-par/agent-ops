@@ -19,13 +19,51 @@ describe("Work Items Routes", () => {
     sqlite.pragma("foreign_keys = ON");
     db = drizzle(sqlite, { schema });
 
-    // Create work_items table
+    // Create tables
     sqlite.exec(`
+      CREATE TABLE github_connections (
+        id TEXT PRIMARY KEY,
+        github_user_id INTEGER NOT NULL UNIQUE,
+        github_username TEXT NOT NULL,
+        github_avatar_url TEXT,
+        access_token TEXT NOT NULL,
+        refresh_token TEXT,
+        token_expires_at INTEGER,
+        scopes TEXT NOT NULL DEFAULT '[]',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE repositories (
+        id TEXT PRIMARY KEY,
+        connection_id TEXT NOT NULL REFERENCES github_connections(id) ON DELETE CASCADE,
+        github_repo_id INTEGER NOT NULL,
+        owner TEXT NOT NULL,
+        name TEXT NOT NULL,
+        full_name TEXT NOT NULL,
+        html_url TEXT NOT NULL,
+        description TEXT,
+        default_branch TEXT NOT NULL DEFAULT 'main',
+        is_private INTEGER NOT NULL DEFAULT 0,
+        sync_enabled INTEGER NOT NULL DEFAULT 1,
+        sync_status TEXT NOT NULL DEFAULT 'pending',
+        sync_error TEXT,
+        last_sync_at INTEGER,
+        issue_labels_filter TEXT NOT NULL DEFAULT '[]',
+        auto_assign_agents INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
       CREATE TABLE work_items (
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
         type TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'backlog',
+        repository_id TEXT REFERENCES repositories(id),
+        github_issue_id INTEGER,
+        github_issue_number INTEGER,
+        github_issue_url TEXT,
         description TEXT NOT NULL DEFAULT '',
         success_criteria TEXT NOT NULL DEFAULT '[]',
         linked_files TEXT NOT NULL DEFAULT '[]',
