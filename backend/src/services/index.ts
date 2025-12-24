@@ -57,7 +57,7 @@ export {
   GitHubPRService,
   type CreatePRInput,
   type PRResult,
-} from "../features/github/services/github-pr.service.js";
+} from "../features/pull-requests/services/github-pr.service.js";
 
 export {
   WorkspaceManagerService,

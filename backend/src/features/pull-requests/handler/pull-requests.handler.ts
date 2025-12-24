@@ -1,14 +1,14 @@
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
-import { GitHubPRService } from "../features/github/services/github-pr.service.js";
-import type { DrizzleDatabase } from "../db/index.js";
+import { GitHubPRService } from "../services/github-pr.service.js";
+import type { DrizzleDatabase } from "../../../db/index.js";
 
-interface PullRequestsRoutesOptions extends FastifyPluginOptions {
+interface PullRequestsHandlerOptions extends FastifyPluginOptions {
   db: DrizzleDatabase;
 }
 
-export async function pullRequestsRoutes(
+export async function pullRequestsHandler(
   app: FastifyInstance,
-  options: PullRequestsRoutesOptions
+  options: PullRequestsHandlerOptions
 ): Promise<void> {
   const { db } = options;
   const prService = new GitHubPRService(db);

@@ -13,7 +13,7 @@ import { GitHubService } from "./features/github/services/github.service.js";
 import { GitHubWebhookService } from "./features/github/services/github-webhook.service.js";
 import { GitHubConnectionRepository } from "./features/github/repositories/github-connection.repository.js";
 import { repositoriesRoutes } from "./routes/repositories.routes.js";
-import { pullRequestsRoutes } from "./routes/pull-requests.routes.js";
+import { pullRequestsHandler } from "./features/pull-requests/handler/pull-requests.handler.js";
 import { agentRuntimeRoutes } from "./features/agent-runtime/handler/agent-runtime.handler.js";
 import { concurrencyRoutes } from "./routes/concurrency.routes.js";
 
@@ -88,7 +88,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
     });
 
     // Pull request routes
-    await app.register(pullRequestsRoutes, {
+    await app.register(pullRequestsHandler, {
       prefix: "/api/pull-requests",
       db,
     });
