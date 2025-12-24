@@ -1,18 +1,21 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
-import type { Config } from "./config.js";
-import type { DrizzleDatabase } from "./db/index.js";
-import { WorkItemRepository } from "./repositories/work-item.repository.js";
-import { WorkItemService } from "./services/work-item.service.js";
-import { ConcurrencyLimitsService } from "./services/orchestration.service.js";
-import { workItemsRoutes } from "./routes/work-items.routes.js";
-import { githubAuthRoutes } from "./routes/github-auth.routes.js";
-import { githubWebhookRoutes } from "./routes/github-webhook.routes.js";
-import { repositoriesRoutes } from "./routes/repositories.routes.js";
-import { pullRequestsRoutes } from "./routes/pull-requests.routes.js";
-import { agentRuntimeRoutes } from "./routes/agent-runtime.routes.js";
-import { concurrencyRoutes } from "./routes/concurrency.routes.js";
+import type { Config } from "./shared/config.js";
+import type { DrizzleDatabase } from "./shared/db/index.js";
+import { WorkItemRepository } from "./features/work-items/repositories/work-item.repository.js";
+import { WorkItemService } from "./features/work-items/services/work-item.service.js";
+import { ConcurrencyLimitsService } from "./features/orchestration/services/orchestration.service.js";
+import { workItemsHandler } from "./features/work-items/handler/work-items.handler.js";
+import { githubAuthHandler } from "./features/github/handler/github-auth.handler.js";
+import { githubWebhookHandler } from "./features/github/handler/github-webhook.handler.js";
+import { GitHubService } from "./features/github/services/github.service.js";
+import { GitHubWebhookService } from "./features/github/services/github-webhook.service.js";
+import { GitHubConnectionRepository } from "./features/github/repositories/github-connection.repository.js";
+import { repositoriesRoutes } from "./features/repositories/handler/repositories.handler.js";
+import { pullRequestsHandler } from "./features/pull-requests/handler/pull-requests.handler.js";
+import { agentRuntimeRoutes } from "./features/agent-runtime/handler/agent-runtime.handler.js";
+import { concurrencyHandler } from "./features/concurrency/handler/concurrency.handler.js";
 
 const HEALTH_STATUS_OK = "ok";
 
@@ -53,23 +56,29 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   if (db) {
     const workItemRepository = new WorkItemRepository(db);
     const workItemService = new WorkItemService(workItemRepository);
-    await app.register(workItemsRoutes, {
+    await app.register(workItemsHandler, {
       prefix: "/api/work-items",
       service: workItemService,
     });
 
+    // GitHub feature handlers
+    const githubService = new GitHubService(config);
+    const connectionRepo = new GitHubConnectionRepository(db);
+    const webhookService = new GitHubWebhookService(db, config.githubWebhookSecret);
+
     // GitHub OAuth routes
-    await app.register(githubAuthRoutes, {
+    await app.register(githubAuthHandler, {
       prefix: "/api/auth/github",
       config,
-      db,
+      githubService,
+      connectionRepo,
     });
 
     // GitHub webhook routes
-    await app.register(githubWebhookRoutes, {
+    await app.register(githubWebhookHandler, {
       prefix: "/api/webhooks/github",
       config,
-      db,
+      webhookService,
     });
 
     // Repository management routes
@@ -79,7 +88,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
     });
 
     // Pull request routes
-    await app.register(pullRequestsRoutes, {
+    await app.register(pullRequestsHandler, {
       prefix: "/api/pull-requests",
       db,
     });
@@ -91,13 +100,13 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
       config,
     });
 
-    // Concurrency limits routes (em3.5)
+    // Concurrency limits handler (em3.5)
     const concurrencyService = new ConcurrencyLimitsService({
       maxGlobalWorkers: config.maxGlobalWorkers,
       maxWorkersPerRepo: config.maxWorkersPerRepo,
       maxWorkersPerUser: config.maxWorkersPerUser,
     });
-    await app.register(concurrencyRoutes, {
+    await app.register(concurrencyHandler, {
       prefix: "/api/concurrency",
       concurrencyService,
     });

@@ -24,7 +24,8 @@ set -euo pipefail
 
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-WORK_DIR="$(dirname "$SCRIPT_DIR")"
+# Use current directory as work dir (allows global install)
+WORK_DIR="${WORKER_DIR:-$(pwd)}"
 LOG_DIR="$WORK_DIR/.claude-runs"
 DEFAULT_TIMEOUT=60
 MAX_TASKS=0  # 0 = unlimited
