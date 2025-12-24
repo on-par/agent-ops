@@ -15,7 +15,7 @@ import { GitHubConnectionRepository } from "./features/github/repositories/githu
 import { repositoriesRoutes } from "./routes/repositories.routes.js";
 import { pullRequestsHandler } from "./features/pull-requests/handler/pull-requests.handler.js";
 import { agentRuntimeRoutes } from "./features/agent-runtime/handler/agent-runtime.handler.js";
-import { concurrencyRoutes } from "./routes/concurrency.routes.js";
+import { concurrencyHandler } from "./features/concurrency/handler/concurrency.handler.js";
 
 const HEALTH_STATUS_OK = "ok";
 
@@ -100,13 +100,13 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
       config,
     });
 
-    // Concurrency limits routes (em3.5)
+    // Concurrency limits handler (em3.5)
     const concurrencyService = new ConcurrencyLimitsService({
       maxGlobalWorkers: config.maxGlobalWorkers,
       maxWorkersPerRepo: config.maxWorkersPerRepo,
       maxWorkersPerUser: config.maxWorkersPerUser,
     });
-    await app.register(concurrencyRoutes, {
+    await app.register(concurrencyHandler, {
       prefix: "/api/concurrency",
       concurrencyService,
     });
