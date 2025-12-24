@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 import type { WorkItemRepository } from "../repositories/work-item.repository.js";
 import type { WorkerRepository } from "../repositories/worker.repository.js";
 import type { AgentExecutionRepository } from "../repositories/agent-execution.repository.js";
+import type { TemplateRepository } from "../repositories/template.repository.js";
 import type { WorkflowEngineService } from "./workflow-engine.service.js";
 import type { WorkerPoolService } from "./worker-pool.service.js";
 import type {
@@ -18,6 +19,7 @@ import type { WebSocketHubService } from "./websocket-hub.service.js";
 import type {
   WorkItem,
   Worker,
+  Template,
   AgentRole,
   WorkItemStatus,
   WorkItemType,
@@ -312,14 +314,70 @@ export class WorkItemQueueManager {
 // ============================================================================
 
 /**
+ * Repository familiarity entry tracking worker experience with a repo
+ */
+export interface RepoFamiliarityEntry {
+  workerId: string;
+  repositoryId: string;
+  completedTasks: number;
+  lastWorkedAt: Date;
+}
+
+/**
+ * Scoring weights for agent assignment
+ */
+export interface AssignmentScoringWeights {
+  /** Weight for workload factor (0-1) */
+  workload: number;
+  /** Weight for error history factor (0-1) */
+  errorHistory: number;
+  /** Weight for context headroom factor (0-1) */
+  contextHeadroom: number;
+  /** Weight for cost efficiency factor (0-1) */
+  costEfficiency: number;
+  /** Weight for capability match factor (0-1) */
+  capabilityMatch: number;
+  /** Weight for role match factor (0-1) */
+  roleMatch: number;
+  /** Weight for repo familiarity factor (0-1) */
+  repoFamiliarity: number;
+}
+
+/**
+ * Default scoring weights
+ */
+const DEFAULT_SCORING_WEIGHTS: AssignmentScoringWeights = {
+  workload: 1.0,
+  errorHistory: 1.0,
+  contextHeadroom: 0.5,
+  costEfficiency: 0.3,
+  capabilityMatch: 1.0,
+  roleMatch: 0.8,
+  repoFamiliarity: 0.7,
+};
+
+/**
  * Handles matching work items to available agents
  * Based on capabilities, workload, and repository familiarity
  */
 export class AgentAssignmentService {
+  /** Cache of templates by ID for performance */
+  private templateCache: Map<string, Template> = new Map();
+
+  /** Tracks worker familiarity with repositories */
+  private repoFamiliarity: Map<string, RepoFamiliarityEntry> = new Map();
+
+  /** Scoring weights for assignment decisions */
+  private scoringWeights: AssignmentScoringWeights;
+
   constructor(
     private workerRepo: WorkerRepository,
-    private workerPool: WorkerPoolService
-  ) {}
+    private workerPool: WorkerPoolService,
+    private templateRepo?: TemplateRepository,
+    scoringWeights?: Partial<AssignmentScoringWeights>
+  ) {
+    this.scoringWeights = { ...DEFAULT_SCORING_WEIGHTS, ...scoringWeights };
+  }
 
   /**
    * Find the best available worker for a work item
@@ -360,39 +418,219 @@ export class AgentAssignmentService {
   /**
    * Calculate a score for how well a worker matches a work item
    * Higher score = better match
+   *
+   * Scoring factors:
+   * 1. Workload: Idle workers preferred
+   * 2. Error history: Fewer errors preferred
+   * 3. Context headroom: More headroom preferred
+   * 4. Cost efficiency: Lower cost per token preferred
+   * 5. Capability match: Template must support work item type
+   * 6. Role match: Template default role matching preferred
+   * 7. Repo familiarity: Experience with repo preferred
    */
   private async calculateWorkerScore(
     worker: Worker,
-    _workItem: WorkItem,
-    _role: AgentRole
+    workItem: WorkItem,
+    role: AgentRole
   ): Promise<number> {
     let score = 100; // Base score
+    const weights = this.scoringWeights;
 
-    // Factor 1: Current workload (prefer less loaded workers)
-    // Idle workers get full score
-    if (worker.status === "idle") {
-      score += 50;
+    // Get template for capability checks
+    const template = await this.getTemplate(worker.templateId);
+
+    // Factor 1: Capability match (REQUIRED - return 0 if incompatible)
+    if (template) {
+      const capabilityScore = this.calculateCapabilityScore(template, workItem);
+      if (capabilityScore === 0) {
+        return 0; // Worker cannot handle this work item type
+      }
+      score += capabilityScore * weights.capabilityMatch;
     }
 
-    // Factor 2: Error history (prefer workers with fewer errors)
-    score -= worker.errors * 10;
+    // Factor 2: Role match (preferred but not required)
+    if (template) {
+      const roleScore = this.calculateRoleScore(template, role);
+      score += roleScore * weights.roleMatch;
+    }
 
-    // Factor 3: Context window usage (prefer workers with more headroom)
+    // Factor 3: Current workload (prefer idle workers)
+    if (worker.status === "idle") {
+      score += 50 * weights.workload;
+    }
+
+    // Factor 4: Error history (prefer workers with fewer errors)
+    score -= worker.errors * 10 * weights.errorHistory;
+
+    // Factor 5: Context window usage (prefer workers with more headroom)
     const contextUsagePercent = worker.contextWindowUsed / worker.contextWindowLimit;
-    score -= contextUsagePercent * 30;
+    score -= contextUsagePercent * 30 * weights.contextHeadroom;
 
-    // Factor 4: Cost efficiency (prefer workers that have been cost-effective)
-    // Lower cost per token = better score
+    // Factor 6: Cost efficiency (prefer workers that have been cost-effective)
     if (worker.tokensUsed > 0) {
       const costPerToken = worker.costUsd / worker.tokensUsed;
       // Assuming average cost is ~$0.00002 per token
       if (costPerToken < 0.00002) {
-        score += 10;
+        score += 10 * weights.costEfficiency;
       }
+    }
+
+    // Factor 7: Repository familiarity (prefer workers that know the repo)
+    if (workItem.repositoryId) {
+      const familiarityScore = this.calculateRepoFamiliarityScore(
+        worker.id,
+        workItem.repositoryId
+      );
+      score += familiarityScore * weights.repoFamiliarity;
     }
 
     // Ensure score doesn't go negative
     return Math.max(0, score);
+  }
+
+  /**
+   * Calculate capability score based on template's allowed work item types
+   * @returns 0 if incompatible, 30 if compatible
+   */
+  private calculateCapabilityScore(
+    template: Template,
+    workItem: WorkItem
+  ): number {
+    const allowedTypes = template.allowedWorkItemTypes;
+
+    // Wildcard means all types are allowed
+    if (allowedTypes.includes("*")) {
+      return 30;
+    }
+
+    // Check if work item type is in allowed list
+    if (allowedTypes.includes(workItem.type)) {
+      return 30;
+    }
+
+    // Incompatible
+    return 0;
+  }
+
+  /**
+   * Calculate role score based on template's default role
+   * @returns 0-25 based on role match
+   */
+  private calculateRoleScore(template: Template, requiredRole: AgentRole): number {
+    // No default role means agent is generic (good for any role)
+    if (!template.defaultRole) {
+      return 15;
+    }
+
+    // Perfect match
+    if (template.defaultRole === requiredRole) {
+      return 25;
+    }
+
+    // No match but can still work (just not specialized)
+    return 5;
+  }
+
+  /**
+   * Calculate repository familiarity score
+   * @returns 0-40 based on familiarity level
+   */
+  private calculateRepoFamiliarityScore(
+    workerId: string,
+    repositoryId: string
+  ): number {
+    const key = `${workerId}:${repositoryId}`;
+    const entry = this.repoFamiliarity.get(key);
+
+    if (!entry) {
+      return 0; // No prior experience
+    }
+
+    // Score based on completed tasks (capped at 5 for max bonus)
+    const taskBonus = Math.min(entry.completedTasks, 5) * 5; // Max 25 points
+
+    // Recency bonus (tasks in last 24 hours get extra points)
+    const hoursSinceLastWork =
+      (Date.now() - entry.lastWorkedAt.getTime()) / (1000 * 60 * 60);
+    const recencyBonus = hoursSinceLastWork < 24 ? 15 : hoursSinceLastWork < 72 ? 10 : 5;
+
+    return taskBonus + recencyBonus; // Max 40 points
+  }
+
+  /**
+   * Get template by ID (with caching)
+   */
+  private async getTemplate(templateId: string): Promise<Template | null> {
+    // Check cache first
+    if (this.templateCache.has(templateId)) {
+      return this.templateCache.get(templateId) || null;
+    }
+
+    // Fetch from repository if available
+    if (this.templateRepo) {
+      const template = await this.templateRepo.findById(templateId);
+      if (template) {
+        this.templateCache.set(templateId, template);
+      }
+      return template;
+    }
+
+    return null;
+  }
+
+  /**
+   * Record that a worker completed work on a repository
+   * Updates familiarity tracking for future assignment decisions
+   */
+  recordRepoExperience(workerId: string, repositoryId: string): void {
+    const key = `${workerId}:${repositoryId}`;
+    const existing = this.repoFamiliarity.get(key);
+
+    if (existing) {
+      existing.completedTasks += 1;
+      existing.lastWorkedAt = new Date();
+    } else {
+      this.repoFamiliarity.set(key, {
+        workerId,
+        repositoryId,
+        completedTasks: 1,
+        lastWorkedAt: new Date(),
+      });
+    }
+  }
+
+  /**
+   * Get repository familiarity for a worker
+   */
+  getRepoFamiliarity(workerId: string): RepoFamiliarityEntry[] {
+    const entries: RepoFamiliarityEntry[] = [];
+    for (const [key, entry] of this.repoFamiliarity) {
+      if (key.startsWith(`${workerId}:`)) {
+        entries.push(entry);
+      }
+    }
+    return entries;
+  }
+
+  /**
+   * Clear template cache (useful after template updates)
+   */
+  clearTemplateCache(): void {
+    this.templateCache.clear();
+  }
+
+  /**
+   * Update scoring weights dynamically
+   */
+  updateScoringWeights(weights: Partial<AssignmentScoringWeights>): void {
+    this.scoringWeights = { ...this.scoringWeights, ...weights };
+  }
+
+  /**
+   * Get current scoring weights
+   */
+  getScoringWeights(): AssignmentScoringWeights {
+    return { ...this.scoringWeights };
   }
 
   /**
@@ -994,11 +1232,16 @@ export class OrchestrationService {
     private agentLifecycle: AgentLifecycleService,
     private observability: ObservabilityService | undefined,
     private websocket: WebSocketHubService | undefined,
-    private config: OrchestrationConfig = DEFAULT_CONFIG
+    private config: OrchestrationConfig = DEFAULT_CONFIG,
+    private templateRepo?: TemplateRepository
   ) {
     // Initialize sub-services
     this.queueManager = new WorkItemQueueManager(workItemRepo);
-    this.assignmentService = new AgentAssignmentService(workerRepo, workerPool);
+    this.assignmentService = new AgentAssignmentService(
+      workerRepo,
+      workerPool,
+      templateRepo
+    );
     this.progressTracking = new ProgressTrackingService(
       workItemRepo,
       observability,
@@ -1249,6 +1492,11 @@ export class OrchestrationService {
 
         // Run post-execution hooks
         await this.agentLifecycle.runPostExecutionHooks(lifecycleContext, result);
+
+        // Record repository experience for future assignment optimization
+        if (workItem.repositoryId) {
+          this.assignmentService.recordRepoExperience(worker.id, workItem.repositoryId);
+        }
 
         // Mark queue item complete
         this.queueManager.completeProcessing(workItem.id);

@@ -10,7 +10,9 @@ import {
   ErrorHandlingService,
   ConcurrencyLimitsService,
   type OrchestrationConfig,
+  type AssignmentScoringWeights,
 } from "./orchestration.service.js";
+import { TemplateRepository } from "../repositories/template.repository.js";
 import { WorkflowEngineService } from "./workflow-engine.service.js";
 import { WorkerPoolService } from "./worker-pool.service.js";
 import { AgentExecutorService } from "./agent-executor.service.js";
@@ -27,6 +29,7 @@ describe("OrchestrationService", () => {
   let workItemRepo: WorkItemRepository;
   let workerRepo: WorkerRepository;
   let agentExecutionRepo: AgentExecutionRepository;
+  let templateRepo: TemplateRepository;
   let workflowEngine: WorkflowEngineService;
   let workerPool: WorkerPoolService;
   let agentExecutor: AgentExecutorService;
@@ -181,6 +184,7 @@ describe("OrchestrationService", () => {
     workItemRepo = new WorkItemRepository(db);
     workerRepo = new WorkerRepository(db);
     agentExecutionRepo = new AgentExecutionRepository(db);
+    templateRepo = new TemplateRepository(db);
 
     // Initialize services
     workflowEngine = new WorkflowEngineService(workItemRepo, workerRepo);
@@ -431,6 +435,275 @@ describe("OrchestrationService", () => {
       expect(assignmentService.determineRole(readyItem)).toBe("implementer");
       expect(assignmentService.determineRole(inProgressItem)).toBe("tester");
       expect(assignmentService.determineRole(reviewItem)).toBe("reviewer");
+    });
+  });
+
+  // ============================================================================
+  // AgentAssignmentService Enhanced Features Tests (em3.2)
+  // ============================================================================
+
+  describe("AgentAssignmentService Enhanced Features", () => {
+    let assignmentService: AgentAssignmentService;
+    let bugOnlyTemplateId: string;
+    let implementerTemplateId: string;
+
+    beforeEach(async () => {
+      assignmentService = new AgentAssignmentService(
+        workerRepo,
+        workerPool,
+        templateRepo
+      );
+
+      // Create specialized templates for capability testing
+      const now = new Date();
+
+      // Template that only handles bugs
+      bugOnlyTemplateId = uuidv4();
+      await db.insert(schema.templates).values({
+        id: bugOnlyTemplateId,
+        name: "Bug Handler",
+        description: "Handles only bug-type work items",
+        createdBy: "system",
+        systemPrompt: "You handle bugs",
+        permissionMode: "askUser",
+        maxTurns: 100,
+        builtinTools: [],
+        mcpServers: [],
+        allowedWorkItemTypes: ["bug"],
+        defaultRole: "implementer",
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      // Template specialized for implementation
+      implementerTemplateId = uuidv4();
+      await db.insert(schema.templates).values({
+        id: implementerTemplateId,
+        name: "Implementer",
+        description: "Specialized for implementation tasks",
+        createdBy: "system",
+        systemPrompt: "You implement features",
+        permissionMode: "askUser",
+        maxTurns: 100,
+        builtinTools: [],
+        mcpServers: [],
+        allowedWorkItemTypes: ["*"],
+        defaultRole: "implementer",
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    describe("Capability Matching", () => {
+      it("should filter out workers that cannot handle work item type", async () => {
+        // Bug-only worker
+        await createTestWorker({
+          status: "idle",
+          templateId: bugOnlyTemplateId,
+        });
+
+        // Feature work item - bug-only worker should not be assigned
+        const workItem = await createTestWorkItem({
+          status: "ready",
+          type: "feature",
+        });
+        const worker = await assignmentService.findBestWorker(
+          workItem,
+          "implementer"
+        );
+
+        expect(worker).toBeNull();
+      });
+
+      it("should allow workers with matching work item type capability", async () => {
+        const bugWorker = await createTestWorker({
+          status: "idle",
+          templateId: bugOnlyTemplateId,
+        });
+
+        const workItem = await createTestWorkItem({
+          status: "ready",
+          type: "bug",
+        });
+        const worker = await assignmentService.findBestWorker(
+          workItem,
+          "implementer"
+        );
+
+        expect(worker).not.toBeNull();
+        expect(worker?.id).toBe(bugWorker.id);
+      });
+
+      it("should allow workers with wildcard capability for any work item type", async () => {
+        const genericWorker = await createTestWorker({
+          status: "idle",
+          templateId: testTemplateId, // Uses ["*"] allowedWorkItemTypes
+        });
+
+        const workItem = await createTestWorkItem({
+          status: "ready",
+          type: "research",
+        });
+        const worker = await assignmentService.findBestWorker(
+          workItem,
+          "implementer"
+        );
+
+        expect(worker).not.toBeNull();
+        expect(worker?.id).toBe(genericWorker.id);
+      });
+    });
+
+    describe("Role Matching", () => {
+      it("should prefer workers with matching default role", async () => {
+        // Create worker with implementer role template
+        const implementerWorker = await createTestWorker({
+          status: "idle",
+          templateId: implementerTemplateId,
+        });
+
+        // Create worker with generic template (no default role)
+        await createTestWorker({
+          status: "idle",
+          templateId: testTemplateId,
+        });
+
+        const workItem = await createTestWorkItem({
+          status: "ready",
+          type: "feature",
+        });
+
+        // Looking for implementer role should prefer the specialized worker
+        const worker = await assignmentService.findBestWorker(
+          workItem,
+          "implementer"
+        );
+
+        expect(worker).not.toBeNull();
+        expect(worker?.id).toBe(implementerWorker.id);
+      });
+    });
+
+    describe("Repository Familiarity", () => {
+      it("should track repository experience", () => {
+        const workerId = "worker-1";
+        const repositoryId = "repo-1";
+
+        // Record first experience
+        assignmentService.recordRepoExperience(workerId, repositoryId);
+        let familiarity = assignmentService.getRepoFamiliarity(workerId);
+        expect(familiarity).toHaveLength(1);
+        expect(familiarity[0].completedTasks).toBe(1);
+
+        // Record second experience
+        assignmentService.recordRepoExperience(workerId, repositoryId);
+        familiarity = assignmentService.getRepoFamiliarity(workerId);
+        expect(familiarity[0].completedTasks).toBe(2);
+      });
+
+      it("should track experience for multiple repos", () => {
+        const workerId = "worker-1";
+
+        assignmentService.recordRepoExperience(workerId, "repo-1");
+        assignmentService.recordRepoExperience(workerId, "repo-2");
+        assignmentService.recordRepoExperience(workerId, "repo-1");
+
+        const familiarity = assignmentService.getRepoFamiliarity(workerId);
+        expect(familiarity).toHaveLength(2);
+
+        const repo1 = familiarity.find((f) => f.repositoryId === "repo-1");
+        const repo2 = familiarity.find((f) => f.repositoryId === "repo-2");
+        expect(repo1?.completedTasks).toBe(2);
+        expect(repo2?.completedTasks).toBe(1);
+      });
+
+      it("should prefer workers with repository familiarity", async () => {
+        // Create two workers
+        const familiarWorker = await createTestWorker({
+          status: "idle",
+          templateId: testTemplateId,
+        });
+        await createTestWorker({
+          status: "idle",
+          templateId: testTemplateId,
+        });
+
+        // Give one worker experience with the repo
+        assignmentService.recordRepoExperience(familiarWorker.id, "test-repo");
+        assignmentService.recordRepoExperience(familiarWorker.id, "test-repo");
+        assignmentService.recordRepoExperience(familiarWorker.id, "test-repo");
+
+        // Create work item for that repo
+        const workItem = await createTestWorkItem({
+          status: "ready",
+          type: "feature",
+          repositoryId: "test-repo",
+        });
+
+        const worker = await assignmentService.findBestWorker(
+          workItem,
+          "implementer"
+        );
+
+        expect(worker).not.toBeNull();
+        expect(worker?.id).toBe(familiarWorker.id);
+      });
+    });
+
+    describe("Scoring Weights", () => {
+      it("should allow updating scoring weights", () => {
+        const originalWeights = assignmentService.getScoringWeights();
+        expect(originalWeights.repoFamiliarity).toBe(0.7);
+
+        assignmentService.updateScoringWeights({ repoFamiliarity: 1.0 });
+
+        const newWeights = assignmentService.getScoringWeights();
+        expect(newWeights.repoFamiliarity).toBe(1.0);
+        // Other weights should remain unchanged
+        expect(newWeights.workload).toBe(originalWeights.workload);
+      });
+
+      it("should use custom scoring weights in constructor", () => {
+        const customService = new AgentAssignmentService(
+          workerRepo,
+          workerPool,
+          templateRepo,
+          { repoFamiliarity: 0.5, roleMatch: 0.3 }
+        );
+
+        const weights = customService.getScoringWeights();
+        expect(weights.repoFamiliarity).toBe(0.5);
+        expect(weights.roleMatch).toBe(0.3);
+        // Default values for unspecified weights
+        expect(weights.workload).toBe(1.0);
+      });
+    });
+
+    describe("Template Cache", () => {
+      it("should clear template cache", async () => {
+        // Force a template lookup to populate cache
+        const worker = await createTestWorker({
+          status: "idle",
+          templateId: testTemplateId,
+        });
+        const workItem = await createTestWorkItem({
+          status: "ready",
+          type: "feature",
+        });
+
+        // First call populates cache
+        await assignmentService.findBestWorker(workItem, "implementer");
+
+        // Clear cache
+        assignmentService.clearTemplateCache();
+
+        // This should still work (cache miss, fetch from repo)
+        const result = await assignmentService.findBestWorker(
+          workItem,
+          "implementer"
+        );
+        expect(result).not.toBeNull();
+      });
     });
   });
 
