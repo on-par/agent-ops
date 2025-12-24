@@ -189,6 +189,31 @@ export const traces = sqliteTable("traces", {
   timestamp: integer("timestamp", { mode: "timestamp_ms" }).notNull(),
 });
 
+// GitHub Connections table - stores OAuth tokens
+export const githubConnections = sqliteTable("github_connections", {
+  id: text("id").primaryKey(),
+
+  // GitHub user info
+  githubUserId: integer("github_user_id").notNull().unique(),
+  githubUsername: text("github_username").notNull(),
+  githubAvatarUrl: text("github_avatar_url"),
+
+  // OAuth tokens (encrypted in production)
+  accessToken: text("access_token").notNull(),
+  refreshToken: text("refresh_token"),
+  tokenExpiresAt: integer("token_expires_at", { mode: "timestamp_ms" }),
+
+  // Scopes granted
+  scopes: text("scopes", { mode: "json" })
+    .notNull()
+    .$type<string[]>()
+    .default([]),
+
+  // Timestamps
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+});
+
 // Type exports for use in repositories
 export type WorkItem = typeof workItems.$inferSelect;
 export type NewWorkItem = typeof workItems.$inferInsert;
@@ -201,3 +226,6 @@ export type NewWorker = typeof workers.$inferInsert;
 
 export type Trace = typeof traces.$inferSelect;
 export type NewTrace = typeof traces.$inferInsert;
+
+export type GitHubConnection = typeof githubConnections.$inferSelect;
+export type NewGitHubConnection = typeof githubConnections.$inferInsert;

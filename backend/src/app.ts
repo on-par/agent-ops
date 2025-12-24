@@ -6,6 +6,7 @@ import type { DrizzleDatabase } from "./db/index.js";
 import { WorkItemRepository } from "./repositories/work-item.repository.js";
 import { WorkItemService } from "./services/work-item.service.js";
 import { workItemsRoutes } from "./routes/work-items.routes.js";
+import { githubAuthRoutes } from "./routes/github-auth.routes.js";
 
 const HEALTH_STATUS_OK = "ok";
 
@@ -42,13 +43,20 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
     return { status: HEALTH_STATUS_OK };
   });
 
-  // Register work items routes if database is provided
+  // Register routes if database is provided
   if (db) {
     const workItemRepository = new WorkItemRepository(db);
     const workItemService = new WorkItemService(workItemRepository);
     await app.register(workItemsRoutes, {
       prefix: "/api/work-items",
       service: workItemService,
+    });
+
+    // GitHub OAuth routes
+    await app.register(githubAuthRoutes, {
+      prefix: "/api/auth/github",
+      config,
+      db,
     });
   }
 

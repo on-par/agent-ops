@@ -9,6 +9,11 @@ interface Config {
   anthropicApiKey: string;
   databaseUrl: string;
   isDevelopment: boolean;
+  // GitHub OAuth
+  githubClientId: string;
+  githubClientSecret: string;
+  githubCallbackUrl: string;
+  baseUrl: string;
 }
 
 function getEnvVar(name: string, defaultValue?: string): string {
@@ -32,13 +37,22 @@ function parsePort(value: string): number {
 
 export function loadConfig(): Config {
   const portString = getEnvVar("PORT", String(DEFAULT_PORT));
+  const port = parsePort(portString);
+  const host = getEnvVar("HOST", DEFAULT_HOST);
+  const isDevelopment = getEnvVar("NODE_ENV", "development") === "development";
+  const baseUrl = getEnvVar("BASE_URL", `http://localhost:${port}`);
 
   return {
-    port: parsePort(portString),
-    host: getEnvVar("HOST", DEFAULT_HOST),
+    port,
+    host,
     anthropicApiKey: getEnvVar("ANTHROPIC_API_KEY", ""),
     databaseUrl: getEnvVar("DATABASE_URL", "sqlite://./agent-ops.db"),
-    isDevelopment: getEnvVar("NODE_ENV", "development") === "development",
+    isDevelopment,
+    // GitHub OAuth
+    githubClientId: getEnvVar("GITHUB_CLIENT_ID", ""),
+    githubClientSecret: getEnvVar("GITHUB_CLIENT_SECRET", ""),
+    githubCallbackUrl: getEnvVar("GITHUB_CALLBACK_URL", `${baseUrl}/api/auth/github/callback`),
+    baseUrl,
   };
 }
 

@@ -45,3 +45,8 @@ export {
 } from "./websocket-hub.service.js";
 
 export { TemplateRegistryService } from "./template-registry.service.js";
+
+export {
+  GitHubService,
+  type GitHubAuthResult,
+} from "./github.service.js";
