@@ -19,6 +19,11 @@ interface Config {
   maxGlobalWorkers: number;
   maxWorkersPerRepo: number;
   maxWorkersPerUser: number;
+  // Agent Runtime
+  workspaceBaseDir: string;
+  maxConcurrentAgents: number;
+  agentTimeoutMs: number;
+  claudeModel: string;
 }
 
 function getEnvVar(name: string, defaultValue?: string): string {
@@ -63,6 +68,11 @@ export function loadConfig(): Config {
     maxGlobalWorkers: parseInt(getEnvVar("MAX_GLOBAL_WORKERS", "10"), 10),
     maxWorkersPerRepo: parseInt(getEnvVar("MAX_WORKERS_PER_REPO", "3"), 10),
     maxWorkersPerUser: parseInt(getEnvVar("MAX_WORKERS_PER_USER", "5"), 10),
+    // Agent Runtime
+    workspaceBaseDir: getEnvVar("WORKSPACE_BASE_DIR", "/tmp/agent-workspaces"),
+    maxConcurrentAgents: parseInt(getEnvVar("MAX_CONCURRENT_AGENTS", "5"), 10),
+    agentTimeoutMs: parseInt(getEnvVar("AGENT_TIMEOUT_MS", "600000"), 10), // 10 minutes
+    claudeModel: getEnvVar("CLAUDE_MODEL", "claude-sonnet-4-20250514"),
   };
 }
 

@@ -47,6 +47,35 @@ export const traceEventTypes = [
 ] as const;
 export type TraceEventType = (typeof traceEventTypes)[number];
 
+// Workspace statuses
+export const workspaceStatuses = [
+  "active",
+  "completed",
+  "error",
+  "cleaning",
+] as const;
+export type WorkspaceStatus = (typeof workspaceStatuses)[number];
+
+// Agent execution statuses
+export const agentExecutionStatuses = [
+  "pending",
+  "running",
+  "success",
+  "error",
+  "cancelled",
+] as const;
+export type AgentExecutionStatus = (typeof agentExecutionStatuses)[number];
+
+// Agent execution output type for JSON column
+export interface AgentExecutionOutput {
+  summary?: string;
+  filesChanged?: string[];
+  testsRun?: boolean;
+  testsPassed?: boolean;
+  logs?: string[];
+  diff?: string;
+}
+
 // Work Items table
 export const workItems = sqliteTable("work_items", {
   id: text("id").primaryKey(),
@@ -328,6 +357,49 @@ export const repositories = sqliteTable("repositories", {
   // Timestamps
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+// Workspaces table - temporary directories for agent execution
+export const workspaces = sqliteTable("workspaces", {
+  id: text("id").primaryKey(),
+  workerId: text("worker_id").references(() => workers.id),
+  workItemId: text("work_item_id").references(() => workItems.id),
+  repositoryId: text("repository_id").references(() => repositories.id),
+
+  // Workspace filesystem
+  path: text("path").notNull(),
+  branchName: text("branch_name"),
+  status: text("status").notNull().$type<WorkspaceStatus>().default("active"),
+
+  // Timestamps
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  completedAt: integer("completed_at", { mode: "timestamp_ms" }),
+  cleanupAt: integer("cleanup_at", { mode: "timestamp_ms" }),
+});
+
+// Agent Executions table - tracks agent runs
+export const agentExecutions = sqliteTable("agent_executions", {
+  id: text("id").primaryKey(),
+  workerId: text("worker_id").references(() => workers.id),
+  workItemId: text("work_item_id").references(() => workItems.id),
+  workspaceId: text("workspace_id").references(() => workspaces.id),
+  templateId: text("template_id").references(() => templates.id),
+
+  // Execution state
+  status: text("status").notNull().$type<AgentExecutionStatus>().default("pending"),
+  errorMessage: text("error_message"),
+  output: text("output", { mode: "json" }).$type<AgentExecutionOutput>(),
+
+  // Metrics
+  durationMs: integer("duration_ms"),
+  tokensUsed: integer("tokens_used").notNull().default(0),
+  costUsd: real("cost_usd").notNull().default(0),
+  toolCallsCount: integer("tool_calls_count").notNull().default(0),
+
+  // Timestamps
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  startedAt: integer("started_at", { mode: "timestamp_ms" }),
+  completedAt: integer("completed_at", { mode: "timestamp_ms" }),
 });
 
 // Type exports for use in repositories
