@@ -26,17 +26,40 @@ vi.mock("simple-git", () => {
   };
 });
 
-// Import mocked module
+// Mock octokit module
+vi.mock("octokit", () => {
+  const mockPullsCreate = vi.fn();
+
+  class MockOctokit {
+    rest = {
+      pulls: {
+        create: mockPullsCreate,
+      },
+    };
+  }
+
+  return {
+    Octokit: MockOctokit,
+    mockPullsCreate,
+  };
+});
+
+// Import mocked modules
 import { simpleGit } from "simple-git";
 
 describe("GitOperationsService", () => {
   let service: GitOperationsService;
   let mockGit: SimpleGit;
+  let mockPullsCreate: Mock;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
     service = new GitOperationsService();
     mockGit = simpleGit() as unknown as SimpleGit;
+
+    // Get mockPullsCreate from the mocked module
+    const octokitModule = await import("octokit");
+    mockPullsCreate = (octokitModule as any).mockPullsCreate;
   });
 
   describe("cloneRepository", () => {
@@ -397,6 +420,87 @@ index 123..456 100644
       await expect(service.getStatus("/tmp/repo")).rejects.toThrow(
         "Failed to get status: Not a git repository"
       );
+    });
+  });
+
+  describe("createPullRequest", () => {
+    it("should create a pull request successfully", async () => {
+      mockPullsCreate.mockResolvedValueOnce({
+        data: {
+          number: 123,
+          html_url: "https://github.com/owner/repo/pull/123",
+          state: "open",
+        },
+      });
+
+      const result = await service.createPullRequest({
+        owner: "testowner",
+        repo: "testrepo",
+        title: "Test PR",
+        body: "Test description",
+        head: "feature/test",
+        base: "main",
+        token: "test-token",
+      });
+
+      expect(result).toEqual({
+        number: 123,
+        htmlUrl: "https://github.com/owner/repo/pull/123",
+        state: "open",
+      });
+
+      expect(mockPullsCreate).toHaveBeenCalledWith({
+        owner: "testowner",
+        repo: "testrepo",
+        title: "Test PR",
+        body: "Test description",
+        head: "feature/test",
+        base: "main",
+        draft: false,
+      });
+    });
+
+    it("should create a draft pull request", async () => {
+      mockPullsCreate.mockResolvedValueOnce({
+        data: {
+          number: 124,
+          html_url: "https://github.com/owner/repo/pull/124",
+          state: "open",
+        },
+      });
+
+      await service.createPullRequest({
+        owner: "testowner",
+        repo: "testrepo",
+        title: "Test Draft PR",
+        body: "Test description",
+        head: "feature/test",
+        base: "main",
+        token: "test-token",
+        draft: true,
+      });
+
+      expect(mockPullsCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          draft: true,
+        })
+      );
+    });
+
+    it("should handle PR creation failure", async () => {
+      mockPullsCreate.mockRejectedValueOnce(new Error("API error"));
+
+      await expect(
+        service.createPullRequest({
+          owner: "testowner",
+          repo: "testrepo",
+          title: "Test PR",
+          body: "Test description",
+          head: "feature/test",
+          base: "main",
+          token: "test-token",
+        })
+      ).rejects.toThrow("Failed to create pull request");
     });
   });
 

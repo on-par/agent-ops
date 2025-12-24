@@ -1,4 +1,5 @@
 import { simpleGit, type StatusResult } from "simple-git";
+import { Octokit } from "octokit";
 
 /**
  * Options for cloning a repository
@@ -25,6 +26,29 @@ export interface GitStatus {
   staged: string[];
   modified: string[];
   untracked: string[];
+}
+
+/**
+ * Options for creating a pull request
+ */
+export interface GitCreatePROptions {
+  owner: string;
+  repo: string;
+  title: string;
+  body: string;
+  head: string;
+  base: string;
+  token: string;
+  draft?: boolean;
+}
+
+/**
+ * Pull request result
+ */
+export interface GitPRResult {
+  number: number;
+  htmlUrl: string;
+  state: string;
 }
 
 /**
@@ -191,6 +215,37 @@ export class GitOperationsService {
     } catch (error) {
       throw new Error(
         `Failed to get status: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
+    }
+  }
+
+  /**
+   * Create a pull request via GitHub API
+   */
+  async createPullRequest(options: GitCreatePROptions): Promise<GitPRResult> {
+    try {
+      const { owner, repo, title, body, head, base, token, draft } = options;
+
+      const octokit = new Octokit({ auth: token });
+
+      const { data: pr } = await octokit.rest.pulls.create({
+        owner,
+        repo,
+        title,
+        body,
+        head,
+        base,
+        draft: draft ?? false,
+      });
+
+      return {
+        number: pr.number,
+        htmlUrl: pr.html_url,
+        state: pr.state,
+      };
+    } catch (error) {
+      throw new Error(
+        `Failed to create pull request: ${error instanceof Error ? error.message : "Unknown error"}`
       );
     }
   }
