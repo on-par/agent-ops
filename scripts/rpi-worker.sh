@@ -9,11 +9,13 @@
 #   CLAUDE_CMD=ccymcp ./scripts/rpi-worker.sh  # Use MCP-enabled claude
 #
 # Options:
-#   --dry-run     Show tasks without executing
-#   --max N       Maximum number of tasks to run
-#   --timeout M   Timeout per phase in minutes (default: 30)
-#   --model M     Model to use: sonnet, opus (default: sonnet)
-#   --help        Show this help
+#   --dry-run           Show tasks without executing
+#   --max N             Maximum number of tasks to run
+#   --timeout M         Timeout per phase in minutes (default: 30)
+#   --model M           Model for phases: sonnet, opus (default: sonnet)
+#   --validator-model M Model for FAR/FACTS validation (default: sonnet)
+#   --max-retries N     Max validation retries per phase (default: 2)
+#   --help              Show this help
 #
 # Environment:
 #   CLAUDE_CMD    Claude command with flags (default: claude)
@@ -30,6 +32,7 @@ TMP_DIR="$WORK_DIR/.claude-runs/tmp"
 DEFAULT_TIMEOUT=30
 MAX_TASKS=0
 CLAUDE_CMD="${CLAUDE_CMD:-claude}"
+MAX_WAIT_SECONDS=3600  # 1 hour - exit if cooldown exceeds this
 
 # Colors
 RED='\033[0;31m'
@@ -45,9 +48,11 @@ PATTERN=""
 DRY_RUN=false
 TIMEOUT_MINS=$DEFAULT_TIMEOUT
 MODEL_CHOICE="sonnet"
+VALIDATOR_MODEL="sonnet"
+MAX_VALIDATION_RETRIES=2
 
 show_help() {
-    head -18 "$0" | tail -16 | sed 's/^# //' | sed 's/^#//'
+    head -20 "$0" | tail -18 | sed 's/^# //' | sed 's/^#//'
     exit 0
 }
 
@@ -69,6 +74,14 @@ while [[ $# -gt 0 ]]; do
             MODEL_CHOICE="$2"
             shift 2
             ;;
+        --validator-model)
+            VALIDATOR_MODEL="$2"
+            shift 2
+            ;;
+        --max-retries)
+            MAX_VALIDATION_RETRIES="$2"
+            shift 2
+            ;;
         --help|-h)
             show_help
             ;;
@@ -85,6 +98,168 @@ MAIN_LOG="$LOG_DIR/rpi-$(date '+%Y-%m-%d-%H-%M-%S').log"
 
 log() {
     echo -e "$(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$MAIN_LOG"
+}
+
+# Check if output indicates rate limiting and extract wait time
+# Returns: 0 if rate limited (sets RATE_LIMIT_SECONDS), 1 if not rate limited
+check_rate_limit() {
+    local output="$1"
+    RATE_LIMIT_SECONDS=0
+
+    # Check for common rate limit patterns
+    # Pattern 1: "retry after X seconds"
+    if echo "$output" | grep -qi "rate.limit\|too.many.requests\|429\|overloaded"; then
+        # Try to extract seconds from various patterns
+        local seconds=""
+
+        # Pattern: "retry after 123 seconds" or "wait 123 seconds"
+        seconds=$(echo "$output" | grep -oiE "(retry|wait).*(after|for)?\s*[0-9]+" | grep -oE "[0-9]+" | head -1)
+
+        # Pattern: "retry-after: 123" header style
+        if [ -z "$seconds" ]; then
+            seconds=$(echo "$output" | grep -oiE "retry-after:?\s*[0-9]+" | grep -oE "[0-9]+" | head -1)
+        fi
+
+        # Pattern: "in X minutes" - convert to seconds
+        if [ -z "$seconds" ]; then
+            local minutes
+            minutes=$(echo "$output" | grep -oiE "in\s+[0-9]+\s+minute" | grep -oE "[0-9]+" | head -1)
+            if [ -n "$minutes" ]; then
+                seconds=$((minutes * 60))
+            fi
+        fi
+
+        # Pattern: "reset at HH:MM:SS" or timestamp - calculate difference
+        if [ -z "$seconds" ]; then
+            local reset_time
+            reset_time=$(echo "$output" | grep -oiE "reset.*(at|in)?\s*[0-9]{1,2}:[0-9]{2}" | grep -oE "[0-9]{1,2}:[0-9]{2}" | head -1)
+            if [ -n "$reset_time" ]; then
+                local now_secs reset_secs
+                now_secs=$(date +%s)
+                reset_secs=$(date -j -f "%H:%M" "$reset_time" +%s 2>/dev/null || date -d "$reset_time" +%s 2>/dev/null || echo "")
+                if [ -n "$reset_secs" ] && [ "$reset_secs" -gt "$now_secs" ]; then
+                    seconds=$((reset_secs - now_secs))
+                fi
+            fi
+        fi
+
+        # Default fallback: 60 seconds if we detected rate limit but couldn't parse time
+        if [ -z "$seconds" ] || [ "$seconds" -eq 0 ]; then
+            seconds=60
+        fi
+
+        RATE_LIMIT_SECONDS=$seconds
+        return 0
+    fi
+
+    return 1
+}
+
+# Handle rate limit: wait if under threshold, exit gracefully if over
+# Returns: 0 if waited and ready to retry, 1 if should exit
+handle_rate_limit() {
+    local wait_seconds="$1"
+    local context="$2"
+
+    if [ "$wait_seconds" -gt "$MAX_WAIT_SECONDS" ]; then
+        local wait_mins=$((wait_seconds / 60))
+        local max_mins=$((MAX_WAIT_SECONDS / 60))
+        log "${RED}[RATE LIMIT]${NC} Cooldown ${wait_mins}m exceeds max wait ${max_mins}m"
+        log "${YELLOW}[RATE LIMIT]${NC} Gracefully exiting. Resume later with: $0 $PATTERN"
+        return 1
+    fi
+
+    local wait_mins=$((wait_seconds / 60))
+    local wait_secs=$((wait_seconds % 60))
+    log "${YELLOW}[RATE LIMIT]${NC} Hit rate limit during $context"
+    log "${YELLOW}[RATE LIMIT]${NC} Waiting ${wait_mins}m${wait_secs}s before retry..."
+
+    # Show countdown every 30 seconds for long waits
+    local remaining=$wait_seconds
+    while [ "$remaining" -gt 0 ]; do
+        if [ "$remaining" -gt 30 ]; then
+            sleep 30
+            remaining=$((remaining - 30))
+            local r_mins=$((remaining / 60))
+            local r_secs=$((remaining % 60))
+            log "${YELLOW}[RATE LIMIT]${NC} ${r_mins}m${r_secs}s remaining..."
+        else
+            sleep "$remaining"
+            remaining=0
+        fi
+    done
+
+    log "${GREEN}[RATE LIMIT]${NC} Cooldown complete, resuming..."
+    return 0
+}
+
+# Wrapper to run claude with rate limit handling
+# Usage: run_claude_with_limit "context" "prompt" "model" "allowed_tools" "output_var_name"
+# Returns: 0 on success, 1 on failure, 2 on rate limit exit
+run_claude_with_limit() {
+    local context="$1"
+    local prompt="$2"
+    local model="$3"
+    local allowed_tools="$4"
+    local timeout_mins="$5"
+    local log_file="$6"
+
+    local max_rate_limit_retries=3
+    local attempt=0
+
+    while [ "$attempt" -lt "$max_rate_limit_retries" ]; do
+        ((attempt++))
+
+        local output
+        local exit_code=0
+
+        # Run claude and capture output
+        if [ -n "$allowed_tools" ]; then
+            output=$(timeout "${timeout_mins}m" $CLAUDE_CMD -p "$prompt" \
+                --model "$model" \
+                --allowedTools "$allowed_tools" \
+                2>&1) || exit_code=$?
+        else
+            output=$(timeout "${timeout_mins}m" $CLAUDE_CMD -p "$prompt" \
+                --model "$model" \
+                2>&1) || exit_code=$?
+        fi
+
+        # Save output to log
+        echo "$output" >> "$log_file"
+
+        # Check for rate limiting
+        if check_rate_limit "$output"; then
+            log "${YELLOW}[RATE LIMIT]${NC} Detected during $context (attempt $attempt/$max_rate_limit_retries)"
+
+            if ! handle_rate_limit "$RATE_LIMIT_SECONDS" "$context"; then
+                # Cooldown too long, exit gracefully
+                return 2
+            fi
+            # Cooldown complete, retry
+            continue
+        fi
+
+        # Also check exit code 1 with rate limit in case it's in stderr
+        if [ "$exit_code" -ne 0 ]; then
+            # Check if it might be a rate limit we missed
+            if echo "$output" | grep -qi "rate\|limit\|429\|overload"; then
+                if check_rate_limit "$output"; then
+                    if ! handle_rate_limit "$RATE_LIMIT_SECONDS" "$context"; then
+                        return 2
+                    fi
+                    continue
+                fi
+            fi
+        fi
+
+        # Return the output via stdout and the exit code
+        echo "$output"
+        return $exit_code
+    done
+
+    log "${RED}[RATE LIMIT]${NC} Exceeded max rate limit retries for $context"
+    return 1
 }
 
 # Get list of ready tasks
@@ -117,8 +292,24 @@ run_research_phase() {
     local bead_info
     bead_info=$(bd show "$task_id" 2>/dev/null)
 
-    local prompt="You are researching issue $task_id to understand how to solve it.
+    # Include validation feedback if this is a retry
+    local feedback_section=""
+    if [ -n "${RESEARCH_FEEDBACK:-}" ]; then
+        feedback_section="
+# ⚠️ PREVIOUS ATTEMPT FAILED VALIDATION
 
+Your previous research did not pass the FAR Scale validation. Here is the feedback:
+
+$RESEARCH_FEEDBACK
+
+Please address these issues in this attempt.
+
+---
+"
+    fi
+
+    local prompt="You are researching issue $task_id to understand how to solve it.
+$feedback_section
 ISSUE DETAILS:
 $bead_info
 
@@ -174,17 +365,24 @@ This research will be stored in the bead and used for the planning phase."
 
     local start_time=$(date +%s)
 
-    if timeout "${TIMEOUT_MINS}m" $CLAUDE_CMD -p "$prompt" \
-        --model "$MODEL_CHOICE" \
-        --allowedTools "Read,Glob,Grep,Task,TodoWrite,WebSearch,WebFetch" \
-        2>&1 | tee "$log_file"; then
-        local exit_code=0
-    else
-        local exit_code=$?
-    fi
+    local output
+    local exit_code=0
+    output=$(run_claude_with_limit \
+        "research:$task_id" \
+        "$prompt" \
+        "$MODEL_CHOICE" \
+        "Read,Glob,Grep,Task,TodoWrite,WebSearch,WebFetch" \
+        "$TIMEOUT_MINS" \
+        "$log_file") || exit_code=$?
 
     local end_time=$(date +%s)
     local duration=$((end_time - start_time))
+
+    # Check for graceful exit due to rate limit
+    if [ $exit_code -eq 2 ]; then
+        log "${YELLOW}[RESEARCH]${NC} Stopping due to rate limit"
+        return 2
+    fi
 
     if [ $exit_code -eq 0 ] && [ -f "$output_file" ]; then
         # Store research in bead as a comment
@@ -219,7 +417,24 @@ run_plan_phase() {
         research_content=$(cat "$research_file")
     fi
 
+    # Include validation feedback if this is a retry
+    local feedback_section=""
+    if [ -n "${PLAN_FEEDBACK:-}" ]; then
+        feedback_section="
+# ⚠️ PREVIOUS ATTEMPT FAILED VALIDATION
+
+Your previous plan did not pass the FACTS Scale validation. Here is the feedback:
+
+$PLAN_FEEDBACK
+
+Please address these issues in this attempt.
+
+---
+"
+    fi
+
     local prompt="You are creating an implementation plan for issue $task_id.
+$feedback_section
 
 ISSUE DETAILS:
 $bead_info
@@ -271,17 +486,24 @@ This plan will be stored in the bead and used for implementation."
 
     local start_time=$(date +%s)
 
-    if timeout "${TIMEOUT_MINS}m" $CLAUDE_CMD -p "$prompt" \
-        --model "$MODEL_CHOICE" \
-        --allowedTools "Read,Glob,Grep,Task,TodoWrite" \
-        2>&1 | tee "$log_file"; then
-        local exit_code=0
-    else
-        local exit_code=$?
-    fi
+    local output
+    local exit_code=0
+    output=$(run_claude_with_limit \
+        "plan:$task_id" \
+        "$prompt" \
+        "$MODEL_CHOICE" \
+        "Read,Glob,Grep,Task,TodoWrite" \
+        "$TIMEOUT_MINS" \
+        "$log_file") || exit_code=$?
 
     local end_time=$(date +%s)
     local duration=$((end_time - start_time))
+
+    # Check for graceful exit due to rate limit
+    if [ $exit_code -eq 2 ]; then
+        log "${YELLOW}[PLAN]${NC} Stopping due to rate limit"
+        return 2
+    fi
 
     if [ $exit_code -eq 0 ] && [ -f "$output_file" ]; then
         # Store plan in bead design field
@@ -369,23 +591,303 @@ Begin implementation now."
     # Longer timeout for implementation
     local impl_timeout=$((TIMEOUT_MINS * 2))
 
-    if timeout "${impl_timeout}m" $CLAUDE_CMD -p "$prompt" \
-        --model "$MODEL_CHOICE" \
-        --allowedTools "Read,Write,Edit,Bash,Glob,Grep,Task,TodoWrite" \
-        2>&1 | tee "$log_file"; then
-        local exit_code=0
-    else
-        local exit_code=$?
-    fi
+    local output
+    local exit_code=0
+    output=$(run_claude_with_limit \
+        "implement:$task_id" \
+        "$prompt" \
+        "$MODEL_CHOICE" \
+        "Read,Write,Edit,Bash,Glob,Grep,Task,TodoWrite" \
+        "$impl_timeout" \
+        "$log_file") || exit_code=$?
 
     local end_time=$(date +%s)
     local duration=$((end_time - start_time))
+
+    # Check for graceful exit due to rate limit
+    if [ $exit_code -eq 2 ]; then
+        log "${YELLOW}[IMPLEMENT]${NC} Stopping due to rate limit"
+        return 2
+    fi
 
     if [ $exit_code -eq 0 ]; then
         log "${GREEN}[IMPLEMENT]${NC} Completed in $((duration/60))m$((duration%60))s"
         return 0
     else
         log "${RED}[IMPLEMENT]${NC} Failed after $((duration/60))m$((duration%60))s"
+        return 1
+    fi
+}
+
+# FAR Scale Validator (Research phase)
+# Validates: Factual, Actionable, Relevant
+validate_far_scale() {
+    local task_id="$1"
+    local research_file="$2"
+    local feedback_file="$TMP_DIR/${task_id}-far-feedback.md"
+
+    if [ ! -f "$research_file" ]; then
+        log "${RED}[FAR]${NC} Research file not found: $research_file"
+        return 1
+    fi
+
+    local research_content
+    research_content=$(cat "$research_file")
+
+    local bead_info
+    bead_info=$(bd show "$task_id" 2>/dev/null)
+
+    local prompt="You are a research quality validator using the FAR Scale.
+
+ORIGINAL ISSUE:
+$bead_info
+
+RESEARCH DOCUMENT TO VALIDATE:
+$research_content
+
+---
+
+# FAR Scale Validation
+
+Evaluate the research document against each criterion. Be strict but fair.
+
+## Criteria
+
+### F - Factual
+- Is the research based on actual evidence (code found, docs read, web sources)?
+- Are claims supported by specific file paths, line numbers, or URLs?
+- Are there any hallucinated or unverified claims?
+
+### A - Actionable
+- Does the research provide clear direction for planning?
+- Are the findings specific enough to act on?
+- Is there a concrete proposed approach?
+
+### R - Relevant
+- Does the research address the actual problem in the issue?
+- Is the scope appropriate (not too broad, not too narrow)?
+- Are the findings useful for THIS specific task?
+
+---
+
+# Your Response
+
+First, evaluate each criterion with a score 1-5 and brief justification.
+
+Then output EXACTLY one of these verdicts on its own line:
+- VALIDATION_PASSED - All criteria scored 3+ and research is ready for planning
+- VALIDATION_FAILED - One or more criteria scored below 3
+
+If VALIDATION_FAILED, provide specific feedback on what needs improvement.
+
+Example format:
+\`\`\`
+## Factual: 4/5
+Evidence is well-sourced with file paths. Minor gap in web research citations.
+
+## Actionable: 5/5
+Clear proposed approach with specific implementation steps.
+
+## Relevant: 3/5
+Addresses the issue but includes some tangential exploration.
+
+VALIDATION_PASSED
+\`\`\`
+
+Or if failing:
+\`\`\`
+## Factual: 2/5
+Multiple claims without evidence. No file paths provided for existing code analysis.
+
+## Actionable: 4/5
+Good direction but missing specifics.
+
+## Relevant: 4/5
+On topic.
+
+VALIDATION_FAILED
+
+**Feedback for retry:**
+- Add specific file paths for all code references
+- Include URLs for web research claims
+- Verify the authentication module location before planning
+\`\`\`"
+
+    log "${CYAN}[FAR]${NC} Validating research for ${YELLOW}$task_id${NC}"
+
+    local validation_output
+    local exit_code=0
+    validation_output=$(run_claude_with_limit \
+        "FAR-validation:$task_id" \
+        "$prompt" \
+        "$VALIDATOR_MODEL" \
+        "" \
+        5 \
+        "$feedback_file") || exit_code=$?
+
+    # Save full output for debugging
+    echo "$validation_output" > "$feedback_file"
+
+    # Check for graceful exit due to rate limit
+    if [ $exit_code -eq 2 ]; then
+        log "${YELLOW}[FAR]${NC} Stopping due to rate limit"
+        return 2
+    fi
+
+    # Check for pass/fail
+    if echo "$validation_output" | grep -q "VALIDATION_PASSED"; then
+        log "${GREEN}[FAR]${NC} Validation PASSED"
+        return 0
+    else
+        log "${YELLOW}[FAR]${NC} Validation FAILED - see $feedback_file"
+        return 1
+    fi
+}
+
+# FACTS Scale Validator (Plan phase)
+# Validates: Feasible, Atomic, Clear, Testable, Scoped
+validate_facts_scale() {
+    local task_id="$1"
+    local plan_file="$2"
+    local feedback_file="$TMP_DIR/${task_id}-facts-feedback.md"
+
+    if [ ! -f "$plan_file" ]; then
+        log "${RED}[FACTS]${NC} Plan file not found: $plan_file"
+        return 1
+    fi
+
+    local plan_content
+    plan_content=$(cat "$plan_file")
+
+    local bead_info
+    bead_info=$(bd show "$task_id" 2>/dev/null)
+
+    local prompt="You are a plan quality validator using the FACTS Scale.
+
+ORIGINAL ISSUE:
+$bead_info
+
+IMPLEMENTATION PLAN TO VALIDATE:
+$plan_content
+
+---
+
+# FACTS Scale Validation
+
+Evaluate the plan against each criterion. Be strict but fair.
+
+## Criteria
+
+### F - Feasible
+- Can each task be realistically implemented?
+- Are dependencies and prerequisites identified?
+- Are there any tasks that seem impossible or require unavailable resources?
+
+### A - Atomic
+- Are tasks small enough to complete without losing context?
+- Can each task be done in a single focused session?
+- Are there any mega-tasks that should be broken down further?
+
+### C - Clear
+- Are instructions unambiguous?
+- Would a developer know exactly what to do for each task?
+- Are file paths, function names, and specific changes identified?
+
+### T - Testable
+- Does each task have clear success criteria?
+- Can you verify when a task is \"done\"?
+- Are test cases or validation steps included?
+
+### S - Scoped
+- Is the plan properly bounded to the original issue?
+- Is there scope creep (extra features, unnecessary refactoring)?
+- Does the plan do exactly what was asked, no more, no less?
+
+---
+
+# Your Response
+
+First, evaluate each criterion with a score 1-5 and brief justification.
+
+Then output EXACTLY one of these verdicts on its own line:
+- VALIDATION_PASSED - All criteria scored 3+ and plan is ready for implementation
+- VALIDATION_FAILED - One or more criteria scored below 3
+
+If VALIDATION_FAILED, provide specific feedback on what needs improvement.
+
+Example format:
+\`\`\`
+## Feasible: 4/5
+All tasks are implementable. Dependencies correctly identified.
+
+## Atomic: 3/5
+Most tasks are well-sized. Task 2.3 could be split further.
+
+## Clear: 5/5
+Excellent specificity with file paths and code snippets.
+
+## Testable: 4/5
+Good test coverage. Could add edge case tests.
+
+## Scoped: 5/5
+Stays focused on the issue requirements.
+
+VALIDATION_PASSED
+\`\`\`
+
+Or if failing:
+\`\`\`
+## Feasible: 4/5
+Tasks are achievable.
+
+## Atomic: 2/5
+Phase 2 is too large - contains 8 subtasks that should be separate phases.
+
+## Clear: 3/5
+Adequate but some tasks lack specific file references.
+
+## Testable: 2/5
+No test cases defined. Success criteria missing for most tasks.
+
+## Scoped: 4/5
+Minor scope creep in Phase 3.
+
+VALIDATION_FAILED
+
+**Feedback for retry:**
+- Break Phase 2 into 2-3 smaller phases
+- Add specific test cases for each phase
+- Define \"done\" criteria for every task
+- Remove the optional refactoring in Phase 3
+\`\`\`"
+
+    log "${MAGENTA}[FACTS]${NC} Validating plan for ${YELLOW}$task_id${NC}"
+
+    local validation_output
+    local exit_code=0
+    validation_output=$(run_claude_with_limit \
+        "FACTS-validation:$task_id" \
+        "$prompt" \
+        "$VALIDATOR_MODEL" \
+        "" \
+        5 \
+        "$feedback_file") || exit_code=$?
+
+    # Save full output for debugging
+    echo "$validation_output" > "$feedback_file"
+
+    # Check for graceful exit due to rate limit
+    if [ $exit_code -eq 2 ]; then
+        log "${YELLOW}[FACTS]${NC} Stopping due to rate limit"
+        return 2
+    fi
+
+    # Check for pass/fail
+    if echo "$validation_output" | grep -q "VALIDATION_PASSED"; then
+        log "${GREEN}[FACTS]${NC} Validation PASSED"
+        return 0
+    else
+        log "${YELLOW}[FACTS]${NC} Validation FAILED - see $feedback_file"
         return 1
     fi
 }
@@ -401,20 +903,142 @@ run_rpi_cycle() {
     # Mark as in progress
     bd update "$task_id" --status in_progress 2>/dev/null || true
 
-    # Phase 1: Research
-    if ! run_research_phase "$task_id"; then
-        log "${RED}[$task_num/$total]${NC} Research failed for $task_id"
+    local research_file="$TMP_DIR/${task_id}-research.md"
+    local plan_file="$TMP_DIR/${task_id}-plan.md"
+    local far_feedback="$TMP_DIR/${task_id}-far-feedback.md"
+    local facts_feedback="$TMP_DIR/${task_id}-facts-feedback.md"
+
+    # ═══════════════════════════════════════════════════════════════════
+    # Phase 1: Research with FAR Validation Loop
+    # ═══════════════════════════════════════════════════════════════════
+    local research_attempts=0
+    local research_validated=false
+    local phase_exit_code=0
+
+    while [ "$research_attempts" -le "$MAX_VALIDATION_RETRIES" ] && [ "$research_validated" = false ]; do
+        ((research_attempts++))
+        log "${CYAN}[RESEARCH]${NC} Attempt $research_attempts/$((MAX_VALIDATION_RETRIES + 1))"
+
+        # Run research (pass feedback from previous attempt if exists)
+        if [ -f "$far_feedback" ] && [ "$research_attempts" -gt 1 ]; then
+            # Inject previous feedback into research phase
+            export RESEARCH_FEEDBACK=$(cat "$far_feedback")
+        fi
+
+        phase_exit_code=0
+        run_research_phase "$task_id" || phase_exit_code=$?
+
+        # Check for rate limit exit
+        if [ $phase_exit_code -eq 2 ]; then
+            unset RESEARCH_FEEDBACK
+            return 2
+        fi
+
+        if [ $phase_exit_code -ne 0 ]; then
+            log "${RED}[$task_num/$total]${NC} Research execution failed for $task_id"
+            continue
+        fi
+
+        # Validate with FAR Scale
+        phase_exit_code=0
+        validate_far_scale "$task_id" "$research_file" || phase_exit_code=$?
+
+        # Check for rate limit exit
+        if [ $phase_exit_code -eq 2 ]; then
+            unset RESEARCH_FEEDBACK
+            return 2
+        fi
+
+        if [ $phase_exit_code -eq 0 ]; then
+            research_validated=true
+            log "${GREEN}[RESEARCH]${NC} FAR validation passed on attempt $research_attempts"
+        else
+            if [ "$research_attempts" -le "$MAX_VALIDATION_RETRIES" ]; then
+                log "${YELLOW}[RESEARCH]${NC} FAR validation failed, will retry..."
+                # Keep feedback file for next iteration
+            else
+                log "${RED}[RESEARCH]${NC} FAR validation failed after $research_attempts attempts"
+            fi
+        fi
+    done
+
+    unset RESEARCH_FEEDBACK
+
+    if [ "$research_validated" = false ]; then
+        log "${RED}[$task_num/$total]${NC} Research validation failed for $task_id after $research_attempts attempts"
         return 1
     fi
 
-    # Phase 2: Plan
-    if ! run_plan_phase "$task_id"; then
-        log "${RED}[$task_num/$total]${NC} Planning failed for $task_id"
+    # ═══════════════════════════════════════════════════════════════════
+    # Phase 2: Plan with FACTS Validation Loop
+    # ═══════════════════════════════════════════════════════════════════
+    local plan_attempts=0
+    local plan_validated=false
+
+    while [ "$plan_attempts" -le "$MAX_VALIDATION_RETRIES" ] && [ "$plan_validated" = false ]; do
+        ((plan_attempts++))
+        log "${MAGENTA}[PLAN]${NC} Attempt $plan_attempts/$((MAX_VALIDATION_RETRIES + 1))"
+
+        # Run planning (pass feedback from previous attempt if exists)
+        if [ -f "$facts_feedback" ] && [ "$plan_attempts" -gt 1 ]; then
+            export PLAN_FEEDBACK=$(cat "$facts_feedback")
+        fi
+
+        phase_exit_code=0
+        run_plan_phase "$task_id" || phase_exit_code=$?
+
+        # Check for rate limit exit
+        if [ $phase_exit_code -eq 2 ]; then
+            unset PLAN_FEEDBACK
+            return 2
+        fi
+
+        if [ $phase_exit_code -ne 0 ]; then
+            log "${RED}[$task_num/$total]${NC} Planning execution failed for $task_id"
+            continue
+        fi
+
+        # Validate with FACTS Scale
+        phase_exit_code=0
+        validate_facts_scale "$task_id" "$plan_file" || phase_exit_code=$?
+
+        # Check for rate limit exit
+        if [ $phase_exit_code -eq 2 ]; then
+            unset PLAN_FEEDBACK
+            return 2
+        fi
+
+        if [ $phase_exit_code -eq 0 ]; then
+            plan_validated=true
+            log "${GREEN}[PLAN]${NC} FACTS validation passed on attempt $plan_attempts"
+        else
+            if [ "$plan_attempts" -le "$MAX_VALIDATION_RETRIES" ]; then
+                log "${YELLOW}[PLAN]${NC} FACTS validation failed, will retry..."
+            else
+                log "${RED}[PLAN]${NC} FACTS validation failed after $plan_attempts attempts"
+            fi
+        fi
+    done
+
+    unset PLAN_FEEDBACK
+
+    if [ "$plan_validated" = false ]; then
+        log "${RED}[$task_num/$total]${NC} Plan validation failed for $task_id after $plan_attempts attempts"
         return 1
     fi
 
-    # Phase 3: Implement
-    if ! run_implement_phase "$task_id"; then
+    # ═══════════════════════════════════════════════════════════════════
+    # Phase 3: Implement (no validation loop - uses quality gates)
+    # ═══════════════════════════════════════════════════════════════════
+    phase_exit_code=0
+    run_implement_phase "$task_id" || phase_exit_code=$?
+
+    # Check for rate limit exit
+    if [ $phase_exit_code -eq 2 ]; then
+        return 2
+    fi
+
+    if [ $phase_exit_code -ne 0 ]; then
         log "${RED}[$task_num/$total]${NC} Implementation failed for $task_id"
         return 1
     fi
@@ -426,6 +1050,7 @@ run_rpi_cycle() {
     git push 2>/dev/null || log "${YELLOW}Nothing to push${NC}"
 
     log "${GREEN}[$task_num/$total]${NC} Completed RPI cycle for ${YELLOW}$task_id${NC}"
+    log "  Research: $research_attempts attempt(s) | Plan: $plan_attempts attempt(s)"
 
     # Cleanup temp files
     rm -f "$TMP_DIR/${task_id}-"*.md 2>/dev/null || true
@@ -442,7 +1067,7 @@ main() {
     cd "$WORK_DIR"
 
     log "${BLUE}=== RPI Worker Started ===${NC}"
-    log "Model: $MODEL_CHOICE | Timeout: ${TIMEOUT_MINS}m per phase"
+    log "Model: $MODEL_CHOICE | Validator: $VALIDATOR_MODEL | Timeout: ${TIMEOUT_MINS}m | Max retries: $MAX_VALIDATION_RETRIES"
     [ -n "$PATTERN" ] && log "Filter pattern: $PATTERN"
 
     # Get task list
@@ -484,6 +1109,7 @@ main() {
     # Process tasks
     local completed=0
     local failed=0
+    local rate_limited=false
 
     for i in "${!task_array[@]}"; do
         [ "$MAX_TASKS" -gt 0 ] && [ "$i" -ge "$MAX_TASKS" ] && break
@@ -491,8 +1117,16 @@ main() {
         local task="${task_array[$i]}"
         local task_num=$((i + 1))
 
-        if (run_rpi_cycle "$task" "$task_num" "$total"); then
+        local cycle_exit=0
+        run_rpi_cycle "$task" "$task_num" "$total" || cycle_exit=$?
+
+        if [ $cycle_exit -eq 0 ]; then
             ((completed++))
+        elif [ $cycle_exit -eq 2 ]; then
+            # Rate limit - graceful exit
+            rate_limited=true
+            log "${YELLOW}[RATE LIMIT]${NC} Stopping worker due to extended cooldown"
+            break
         else
             ((failed++))
         fi
@@ -502,14 +1136,25 @@ main() {
     done
 
     # Summary
-    log "${BLUE}=== RPI Worker Complete ===${NC}"
-    log "Completed: ${GREEN}$completed${NC} | Failed: ${RED}$failed${NC} | Total: $total"
+    if [ "$rate_limited" = true ]; then
+        log "${YELLOW}=== RPI Worker Paused (Rate Limited) ===${NC}"
+        log "Completed: ${GREEN}$completed${NC} | Failed: ${RED}$failed${NC} | Remaining: $((total - completed - failed))"
+        log "${YELLOW}Resume later with:${NC} $0 $PATTERN"
+    else
+        log "${BLUE}=== RPI Worker Complete ===${NC}"
+        log "Completed: ${GREEN}$completed${NC} | Failed: ${RED}$failed${NC} | Total: $total"
+    fi
 
     # Final sync
     log "Final sync..."
     git pull --rebase 2>/dev/null || true
     bd sync 2>/dev/null || true
     git push 2>/dev/null || log "${YELLOW}Nothing to push${NC}"
+
+    if [ "$rate_limited" = true ]; then
+        log "${YELLOW}Exiting due to rate limit. Run again later.${NC}"
+        exit 0  # Exit gracefully, not an error
+    fi
 
     log "${GREEN}Done!${NC}"
 }
