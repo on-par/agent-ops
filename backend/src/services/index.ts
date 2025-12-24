@@ -81,3 +81,12 @@ export {
   type ExecutionContext,
   type ExecutionResult,
 } from "./agent-executor.service.js";
+
+export {
+  AgentLifecycleService,
+  type LifecycleHookType,
+  type PreExecutionHook,
+  type PostExecutionHook,
+  type ErrorHook,
+  type StatusChangeHook,
+} from "./agent-lifecycle.service.js";
