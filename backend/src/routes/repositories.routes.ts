@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { Octokit } from "octokit";
 import { RepositoryRepository } from "../repositories/repository.repository.js";
 import { GitHubConnectionRepository } from "../repositories/github-connection.repository.js";
+import { GitHubSyncService } from "../services/github-sync.service.js";
 import type { DrizzleDatabase } from "../db/index.js";
 
 interface RepositoriesRoutesOptions extends FastifyPluginOptions {
@@ -15,6 +16,7 @@ export async function repositoriesRoutes(
   const { db } = options;
   const repoRepository = new RepositoryRepository(db);
   const connectionRepo = new GitHubConnectionRepository(db);
+  const syncService = new GitHubSyncService(db);
 
   /**
    * GET /api/repositories
@@ -280,14 +282,64 @@ export async function repositoriesRoutes(
       });
     }
 
-    // Mark as syncing (actual sync will be implemented in zi0.3)
-    await repoRepository.updateSyncStatus(repo.id, "syncing");
+    try {
+      const result = await syncService.syncRepository(repo.id);
 
-    request.log.info({ repoId: repo.id, fullName: repo.fullName }, "Sync triggered");
+      request.log.info(
+        { repoId: repo.id, fullName: repo.fullName, ...result },
+        "Sync completed"
+      );
 
-    return reply.send({
-      message: "Sync started",
-      repository: await repoRepository.findById(repo.id),
-    });
+      return reply.send({
+        message: "Sync completed",
+        result,
+        repository: await repoRepository.findById(repo.id),
+      });
+    } catch (err) {
+      request.log.error({ err, repoId: repo.id }, "Sync failed");
+      return reply.status(500).send({
+        error: "Sync failed",
+        message: err instanceof Error ? err.message : "Unknown error",
+      });
+    }
+  });
+
+  /**
+   * POST /api/repositories/sync-all
+   * Trigger sync for all enabled repositories
+   */
+  app.post("/sync-all", async (request, reply) => {
+    try {
+      const results = await syncService.syncAllRepositories();
+
+      const summary = {
+        total: results.size,
+        successful: 0,
+        failed: 0,
+        details: [] as Array<{ repoId: string; created: number; updated: number; errors: string[] }>,
+      };
+
+      for (const [repoId, result] of results) {
+        if (result.errors.length === 0) {
+          summary.successful++;
+        } else {
+          summary.failed++;
+        }
+        summary.details.push({ repoId, ...result });
+      }
+
+      request.log.info(summary, "Sync all completed");
+
+      return reply.send({
+        message: "Sync all completed",
+        summary,
+      });
+    } catch (err) {
+      request.log.error({ err }, "Sync all failed");
+      return reply.status(500).send({
+        error: "Sync all failed",
+        message: err instanceof Error ? err.message : "Unknown error",
+      });
+    }
   });
 }

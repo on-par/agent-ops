@@ -50,3 +50,5 @@ export {
   GitHubService,
   type GitHubAuthResult,
 } from "./github.service.js";
+
+export { GitHubSyncService } from "./github-sync.service.js";
