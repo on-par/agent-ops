@@ -60,7 +60,7 @@ export {
   type AgentTemplate,
   type CreateAgentTemplate,
   type UpdateAgentTemplate,
-} from "./template.js";
+} from "../features/templates/models/template.js";
 
 export {
   // Worker schemas

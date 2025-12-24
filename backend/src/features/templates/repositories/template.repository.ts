@@ -1,11 +1,11 @@
 import { eq } from "drizzle-orm";
-import type { DrizzleDatabase } from "../db/index.js";
+import type { DrizzleDatabase } from "../../../db/index.js";
 import {
   templates,
   type Template,
   type NewTemplate,
   type AgentRole,
-} from "../db/schema.js";
+} from "../../../db/schema.js";
 
 /**
  * Repository for Template entity operations.

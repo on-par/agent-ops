@@ -2,9 +2,9 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
-import * as schema from "../db/schema.js";
-import { TemplateRepository } from "./template.repository.js";
-import type { NewTemplate, Template, AgentRole } from "../db/schema.js";
+import * as schema from "../../../db/schema.js";
+import { TemplateRepository } from "../repositories/template.repository.js";
+import type { NewTemplate, Template, AgentRole } from "../../../db/schema.js";
 
 describe("TemplateRepository", () => {
   let sqlite: Database.Database;

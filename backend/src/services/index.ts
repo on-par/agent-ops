@@ -44,7 +44,7 @@ export {
   type WebSocketWorkerMetrics,
 } from "./websocket-hub.service.js";
 
-export { TemplateRegistryService } from "./template-registry.service.js";
+export { TemplateRegistryService } from "../features/templates/services/template-registry.service.js";
 
 export {
   GitHubService,

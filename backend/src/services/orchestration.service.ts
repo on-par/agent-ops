@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 import type { WorkItemRepository } from "../features/work-items/repositories/work-item.repository.js";
 import type { WorkerRepository } from "../repositories/worker.repository.js";
 import type { AgentExecutionRepository } from "../features/agent-runtime/repositories/agent-execution.repository.js";
-import type { TemplateRepository } from "../repositories/template.repository.js";
+import type { TemplateRepository } from "../features/templates/repositories/template.repository.js";
 import type { WorkflowEngineService } from "./workflow-engine.service.js";
 import type { WorkerPoolService } from "./worker-pool.service.js";
 import type {

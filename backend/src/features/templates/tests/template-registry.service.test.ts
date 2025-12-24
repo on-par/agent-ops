@@ -1,14 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import * as schema from "../db/schema.js";
+import * as schema from "../../../db/schema.js";
 import { TemplateRepository } from "../repositories/template.repository.js";
-import { TemplateRegistryService } from "./template-registry.service.js";
+import { TemplateRegistryService } from "../services/template-registry.service.js";
 import type {
   CreateAgentTemplate,
   UpdateAgentTemplate,
 } from "../models/template.js";
-import type { AgentRole, WorkItemType, Template } from "../db/schema.js";
+import type { AgentRole, WorkItemType, Template } from "../../../db/schema.js";
 
 describe("TemplateRegistryService", () => {
   let sqlite: Database.Database;

@@ -12,7 +12,7 @@ import {
   type OrchestrationConfig,
   type AssignmentScoringWeights,
 } from "./orchestration.service.js";
-import { TemplateRepository } from "../repositories/template.repository.js";
+import { TemplateRepository } from "../features/templates/repositories/template.repository.js";
 import { WorkflowEngineService } from "./workflow-engine.service.js";
 import { WorkerPoolService } from "./worker-pool.service.js";
 import { AgentExecutorService } from "../features/agent-runtime/services/agent-executor.service.js";

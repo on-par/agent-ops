@@ -5,7 +5,7 @@
  * abstracting database operations and providing a clean API for data access.
  */
 
-export { TemplateRepository } from "./template.repository.js";
+export { TemplateRepository } from "../features/templates/repositories/template.repository.js";
 export { WorkItemRepository } from "../features/work-items/repositories/work-item.repository.js";
 export { WorkerRepository } from "./worker.repository.js";
 export { GitHubConnectionRepository } from "../features/github/repositories/github-connection.repository.js";
