@@ -1,6 +1,6 @@
 import { Octokit } from "octokit";
 import type { DrizzleDatabase } from "../../../db/index.js";
-import { RepositoryRepository } from "../../../repositories/repository.repository.js";
+import { RepositoryRepository } from "../../repositories/repositories/repository.repository.js";
 import { GitHubConnectionRepository } from "../../github/repositories/github-connection.repository.js";
 import { WorkItemRepository } from "../../work-items/repositories/work-item.repository.js";
 

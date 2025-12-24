@@ -12,7 +12,7 @@ import { githubWebhookHandler } from "./features/github/handler/github-webhook.h
 import { GitHubService } from "./features/github/services/github.service.js";
 import { GitHubWebhookService } from "./features/github/services/github-webhook.service.js";
 import { GitHubConnectionRepository } from "./features/github/repositories/github-connection.repository.js";
-import { repositoriesRoutes } from "./routes/repositories.routes.js";
+import { repositoriesRoutes } from "./features/repositories/handler/repositories.handler.js";
 import { pullRequestsHandler } from "./features/pull-requests/handler/pull-requests.handler.js";
 import { agentRuntimeRoutes } from "./features/agent-runtime/handler/agent-runtime.handler.js";
 import { concurrencyHandler } from "./features/concurrency/handler/concurrency.handler.js";

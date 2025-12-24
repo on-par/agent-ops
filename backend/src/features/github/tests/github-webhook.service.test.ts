@@ -22,7 +22,7 @@ const mockWorkItemRepository = {
 };
 
 // Mock the repository modules with proper class constructors
-vi.mock("../../../repositories/repository.repository.js", () => ({
+vi.mock("../../repositories/repositories/repository.repository.js", () => ({
   RepositoryRepository: class {
     findAll = mockRepoRepository.findAll;
   },
