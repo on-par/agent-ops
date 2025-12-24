@@ -19,10 +19,10 @@ export interface AgentEngineOptions {
  */
 export interface AgentEngineResult {
   success: boolean;
-  finalMessage?: string;
+  finalMessage?: string | undefined;
   iterations: number;
   toolCallsCount: number;
-  error?: string;
+  error?: string | undefined;
 }
 
 /**
@@ -76,6 +76,7 @@ export class AgentEngineService {
 
       for (let i = 1; i < lines.length; i++) {
         const line = lines[i];
+        if (!line) continue;
         if (line.startsWith("Status: ")) {
           status = line.replace("Status: ", "").trim();
         } else if (line.startsWith("Priority: ")) {

@@ -1,8 +1,8 @@
 import { dir as tmpDir } from "tmp-promise";
 import { rm } from "fs/promises";
-import type { DrizzleDatabase } from "../../shared/db/index.js";
+import type { DrizzleDatabase } from "../../../shared/db/index.js";
 import { WorkspaceRepository } from "../repositories/workspace.repository.js";
-import type { Workspace, WorkspaceStatus } from "../../shared/db/schema.js";
+import type { Workspace, WorkspaceStatus } from "../../../shared/db/schema.js";
 
 export interface WorkspaceManagerConfig {
   baseDir?: string;

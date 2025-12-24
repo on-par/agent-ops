@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { randomBytes } from "crypto";
 import type { GitHubService } from "../services/github.service.js";
 import type { GitHubConnectionRepository } from "../repositories/github-connection.repository.js";
-import type { Config } from "../../../config.js";
+import type { Config } from "../../../shared/config.js";
 
 export interface GitHubAuthHandlerOptions extends FastifyPluginOptions {
   config: Config;

@@ -4,7 +4,7 @@ import type {
   WebhookEventType,
   WebhookPayload,
 } from "../services/github-webhook.service.js";
-import type { Config } from "../../../config.js";
+import type { Config } from "../../../shared/config.js";
 
 export interface GitHubWebhookHandlerOptions extends FastifyPluginOptions {
   config: Config;

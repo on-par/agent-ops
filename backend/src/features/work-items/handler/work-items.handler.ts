@@ -5,7 +5,6 @@ import {
   WorkItemStatusSchema,
   WorkItemTypeSchema,
 } from "../models/work-item.js";
-import { agentRoles, type AgentRole } from "../../shared/db/schema.js";
 
 export interface WorkItemHandlerOptions extends FastifyPluginOptions {
   service: WorkItemService;
@@ -47,7 +46,7 @@ const TransitionSchema = z.object({
   status: WorkItemStatusSchema,
 });
 
-const AgentRoleSchema = z.enum(agentRoles as unknown as readonly [string, ...string[]]);
+const AgentRoleSchema = z.enum(["refiner", "implementer", "tester", "reviewer"]);
 
 const AssignAgentSchema = z.object({
   role: AgentRoleSchema,
@@ -257,7 +256,7 @@ export async function workItemsHandler(
     try {
       const { id } = request.params as { id: string };
       const { role, agentId } = AssignAgentSchema.parse(request.body);
-      const item = await service.assignAgent(id, role as AgentRole, agentId);
+      const item = await service.assignAgent(id, role, agentId);
       return item;
     } catch (error) {
       handleError(error, reply);

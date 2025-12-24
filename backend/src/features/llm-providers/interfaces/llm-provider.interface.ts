@@ -46,8 +46,8 @@ export interface ToolCall {
  * Result of calling LLM with tools
  */
 export interface ToolCallResult {
-  content?: string;
-  toolCalls?: ToolCall[];
+  content?: string | undefined;
+  toolCalls?: ToolCall[] | undefined;
   finishReason: "stop" | "tool_calls" | "length";
 }
 

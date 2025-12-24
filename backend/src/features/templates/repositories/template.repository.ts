@@ -1,11 +1,11 @@
 import { eq } from "drizzle-orm";
-import type { DrizzleDatabase } from "../../shared/db/index.js";
+import type { DrizzleDatabase } from "../../../shared/db/index.js";
 import {
   templates,
   type Template,
   type NewTemplate,
   type AgentRole,
-} from "../../shared/db/schema.js";
+} from "../../../shared/db/schema.js";
 
 /**
  * Repository for Template entity operations.

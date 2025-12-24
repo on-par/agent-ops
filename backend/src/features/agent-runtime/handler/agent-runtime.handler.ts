@@ -1,9 +1,9 @@
 import type { FastifyInstance, FastifyPluginOptions, FastifyReply } from "fastify";
 import { z, ZodError } from "zod";
-import type { DrizzleDatabase } from "../../shared/db/index.js";
+import type { DrizzleDatabase } from "../../../shared/db/index.js";
 import type { Config } from "../../../shared/config.js";
 import { AgentExecutionRepository } from "../repositories/agent-execution.repository.js";
-import { WorkspaceRepository } from "../../../repositories/workspace.repository.js";
+import { WorkspaceRepository } from "../../workspaces/repositories/workspace.repository.js";
 import { WorkerRepository } from "../../workers/repositories/worker.repository.js";
 import { WorkItemRepository } from "../../work-items/repositories/work-item.repository.js";
 import { v4 as uuidv4 } from "uuid";

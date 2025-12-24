@@ -1,12 +1,12 @@
 import { WorkItemRepository } from "../repositories/work-item.repository.js";
-import type { AgentRole } from "../../../models/index.js";
 import type {
+  AgentRole,
   WorkItemStatus,
   WorkItemType,
   SuccessCriterion,
   WorkItem,
   NewWorkItem,
-} from "../../shared/db/schema.js";
+} from "../../../shared/db/schema.js";
 import { randomUUID } from "crypto";
 
 /**

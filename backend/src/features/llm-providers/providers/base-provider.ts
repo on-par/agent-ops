@@ -12,7 +12,7 @@ import type {
  */
 export interface ProviderConfig {
   baseUrl: string;
-  apiKey?: string;
+  apiKey?: string | undefined;
   model: string;
 }
 

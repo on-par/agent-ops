@@ -2,40 +2,48 @@ import { readFile, writeFile } from "fs/promises";
 import { exec } from "child_process";
 import { promisify } from "util";
 import { glob } from "glob";
+import { z } from "zod";
 import type { Tool } from "../../llm-providers/interfaces/llm-provider.interface.js";
 
 const execAsync = promisify(exec);
 
 /**
- * Tool input types for agent operations
+ * Tool input schemas for agent operations
  */
-export interface ReadFileInput {
-  path: string;
-}
+const ReadFileInputSchema = z.object({
+  path: z.string(),
+});
 
-export interface WriteFileInput {
-  path: string;
-  content: string;
-}
+const WriteFileInputSchema = z.object({
+  path: z.string(),
+  content: z.string(),
+});
 
-export interface EditFileInput {
-  path: string;
-  old: string;
-  new: string;
-}
+const EditFileInputSchema = z.object({
+  path: z.string(),
+  old: z.string(),
+  new: z.string(),
+});
 
-export interface RunCommandInput {
-  cmd: string;
-}
+const RunCommandInputSchema = z.object({
+  cmd: z.string(),
+});
 
-export interface SearchFilesInput {
-  pattern: string;
-}
+const SearchFilesInputSchema = z.object({
+  pattern: z.string(),
+});
 
-export interface GrepInput {
-  pattern: string;
-  path?: string;
-}
+const GrepInputSchema = z.object({
+  pattern: z.string(),
+  path: z.string().optional(),
+});
+
+export type ReadFileInput = z.infer<typeof ReadFileInputSchema>;
+export type WriteFileInput = z.infer<typeof WriteFileInputSchema>;
+export type EditFileInput = z.infer<typeof EditFileInputSchema>;
+export type RunCommandInput = z.infer<typeof RunCommandInputSchema>;
+export type SearchFilesInput = z.infer<typeof SearchFilesInputSchema>;
+export type GrepInput = z.infer<typeof GrepInputSchema>;
 
 /**
  * Tool output types
@@ -170,18 +178,36 @@ export class AgentToolExecutor {
   async executeTool(toolName: string, input: Record<string, unknown>): Promise<ToolOutput> {
     try {
       switch (toolName) {
-        case "read_file":
-          return await this.readFile(input as ReadFileInput);
-        case "write_file":
-          return await this.writeFile(input as WriteFileInput);
-        case "edit_file":
-          return await this.editFile(input as EditFileInput);
-        case "run_command":
-          return await this.runCommand(input as RunCommandInput);
-        case "search_files":
-          return await this.searchFiles(input as SearchFilesInput);
-        case "grep":
-          return await this.grep(input as GrepInput);
+        case "read_file": {
+          const parsed = ReadFileInputSchema.safeParse(input);
+          if (!parsed.success) return { success: false, error: parsed.error.message };
+          return await this.readFile(parsed.data);
+        }
+        case "write_file": {
+          const parsed = WriteFileInputSchema.safeParse(input);
+          if (!parsed.success) return { success: false, error: parsed.error.message };
+          return await this.writeFile(parsed.data);
+        }
+        case "edit_file": {
+          const parsed = EditFileInputSchema.safeParse(input);
+          if (!parsed.success) return { success: false, error: parsed.error.message };
+          return await this.editFile(parsed.data);
+        }
+        case "run_command": {
+          const parsed = RunCommandInputSchema.safeParse(input);
+          if (!parsed.success) return { success: false, error: parsed.error.message };
+          return await this.runCommand(parsed.data);
+        }
+        case "search_files": {
+          const parsed = SearchFilesInputSchema.safeParse(input);
+          if (!parsed.success) return { success: false, error: parsed.error.message };
+          return await this.searchFiles(parsed.data);
+        }
+        case "grep": {
+          const parsed = GrepInputSchema.safeParse(input);
+          if (!parsed.success) return { success: false, error: parsed.error.message };
+          return await this.grep(parsed.data);
+        }
         default:
           return {
             success: false,

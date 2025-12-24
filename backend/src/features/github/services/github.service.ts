@@ -1,5 +1,5 @@
 import { Octokit } from "octokit";
-import type { Config } from "../../../config.js";
+import type { Config } from "../../../shared/config.js";
 
 interface GitHubTokenResponse {
   access_token: string;
