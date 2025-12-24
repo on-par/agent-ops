@@ -1,20 +1,28 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import * as schema from "../db/schema.js";
-import { WorkspaceRepository } from "./workspace.repository.js";
-import type { NewWorkspace, NewWorker, NewTemplate, NewWorkItem, NewRepository as NewRepo, NewGitHubConnection } from "../db/schema.js";
+import * as schema from "../../../db/schema.js";
+import { WorkspaceManagerService } from "../services/workspace-manager.service.js";
 import { v4 as uuidv4 } from "uuid";
+import { existsSync } from "fs";
+import { mkdir, rm, writeFile } from "fs/promises";
+import { join } from "path";
+import { tmpdir } from "os";
 
-describe("WorkspaceRepository", () => {
+describe("WorkspaceManagerService", () => {
   let sqlite: Database.Database;
   let db: ReturnType<typeof drizzle<typeof schema>>;
-  let repository: WorkspaceRepository;
+  let service: WorkspaceManagerService;
+  let testBaseDir: string;
   let testWorkerId: string;
   let testWorkItemId: string;
   let testRepositoryId: string;
 
   beforeEach(async () => {
+    // Create unique test base directory
+    testBaseDir = join(tmpdir(), `workspace-test-${Date.now()}`);
+    await mkdir(testBaseDir, { recursive: true });
+
     // Create in-memory database for testing
     sqlite = new Database(":memory:");
     sqlite.pragma("journal_mode = WAL");
@@ -130,7 +138,7 @@ describe("WorkspaceRepository", () => {
       );
     `);
 
-    repository = new WorkspaceRepository(db);
+    service = new WorkspaceManagerService(db, { baseDir: testBaseDir });
 
     // Create test dependencies
     const now = new Date();
@@ -214,195 +222,204 @@ describe("WorkspaceRepository", () => {
     });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     sqlite.close();
+    // Cleanup test directory
+    try {
+      await rm(testBaseDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
   });
 
-  describe("findById", () => {
-    it("should return undefined for non-existent workspace", async () => {
-      const found = await repository.findById("non-existent-id");
-      expect(found).toBeUndefined();
-    });
-
-    it("should find a workspace by id", async () => {
-      const workspace = await repository.create({
-        workerId: testWorkerId,
-        workItemId: testWorkItemId,
-        repositoryId: testRepositoryId,
-        path: "/tmp/workspace-1",
-        status: "active",
-      });
-
-      const found = await repository.findById(workspace.id);
-      expect(found).toBeTruthy();
-      expect(found?.id).toBe(workspace.id);
-      expect(found?.path).toBe("/tmp/workspace-1");
-    });
-  });
-
-  describe("create", () => {
-    it("should create a new workspace and return it", async () => {
-      const workspace = await repository.create({
-        workerId: testWorkerId,
-        workItemId: testWorkItemId,
-        repositoryId: testRepositoryId,
-        path: "/tmp/workspace-test",
-        branchName: "feature/test",
-        status: "active",
-      });
+  describe("createWorkspace", () => {
+    it("should create temp directory and database record", async () => {
+      const workspace = await service.createWorkspace(
+        testWorkerId,
+        testWorkItemId,
+        testRepositoryId
+      );
 
       expect(workspace.id).toBeDefined();
-      expect(workspace.path).toBe("/tmp/workspace-test");
-      expect(workspace.branchName).toBe("feature/test");
+      expect(workspace.path).toContain("agent-workspace-");
+      expect(workspace.workerId).toBe(testWorkerId);
+      expect(workspace.workItemId).toBe(testWorkItemId);
+      expect(workspace.repositoryId).toBe(testRepositoryId);
+      expect(existsSync(workspace.path)).toBe(true);
+    });
+
+    it("should set workspace status to active", async () => {
+      const workspace = await service.createWorkspace();
+
       expect(workspace.status).toBe("active");
-      expect(workspace.createdAt).toBeInstanceOf(Date);
     });
 
-    it("should create workspace with minimal data", async () => {
-      const workspace = await repository.create({
-        path: "/tmp/minimal-workspace",
-        status: "active",
-      });
+    it("should create workspace with optional parameters", async () => {
+      const workspace = await service.createWorkspace();
 
-      expect(workspace.id).toBeDefined();
-      expect(workspace.path).toBe("/tmp/minimal-workspace");
       expect(workspace.workerId).toBeNull();
+      expect(workspace.workItemId).toBeNull();
+      expect(workspace.repositoryId).toBeNull();
+      expect(existsSync(workspace.path)).toBe(true);
     });
   });
 
-  describe("findByWorkerId", () => {
-    it("should return workspaces for a worker", async () => {
-      // Create workspaces for the test worker
-      await repository.create({
-        workerId: testWorkerId,
-        path: "/tmp/workspace-1",
-        status: "active",
-      });
+  describe("getWorkspace", () => {
+    it("should return workspace by id", async () => {
+      const created = await service.createWorkspace(testWorkerId);
 
-      await repository.create({
-        workerId: testWorkerId,
-        path: "/tmp/workspace-2",
-        status: "completed",
-      });
+      const found = await service.getWorkspace(created.id);
 
-      // Create workspace for different worker (null in this case)
-      await repository.create({
-        path: "/tmp/workspace-other",
-        status: "active",
-      });
-
-      const workspaces = await repository.findByWorkerId(testWorkerId);
-      expect(workspaces).toHaveLength(2);
-      expect(workspaces.every(w => w.workerId === testWorkerId)).toBe(true);
+      expect(found).toBeDefined();
+      expect(found?.id).toBe(created.id);
+      expect(found?.workerId).toBe(testWorkerId);
     });
 
-    it("should return empty array when no workspaces exist for worker", async () => {
-      const workspaces = await repository.findByWorkerId("non-existent-worker");
-      expect(workspaces).toEqual([]);
-    });
-  });
-
-  describe("findByStatus", () => {
-    it("should filter workspaces by status", async () => {
-      await repository.create({
-        path: "/tmp/active-1",
-        status: "active",
-      });
-
-      await repository.create({
-        path: "/tmp/active-2",
-        status: "active",
-      });
-
-      await repository.create({
-        path: "/tmp/completed-1",
-        status: "completed",
-      });
-
-      const activeWorkspaces = await repository.findByStatus("active");
-      expect(activeWorkspaces).toHaveLength(2);
-      expect(activeWorkspaces.every(w => w.status === "active")).toBe(true);
-
-      const completedWorkspaces = await repository.findByStatus("completed");
-      expect(completedWorkspaces).toHaveLength(1);
-    });
-  });
-
-  describe("updateStatus", () => {
-    it("should change status and set completedAt for completed status", async () => {
-      const workspace = await repository.create({
-        path: "/tmp/workspace-status",
-        status: "active",
-      });
-
-      const updated = await repository.updateStatus(workspace.id, "completed");
-      expect(updated.status).toBe("completed");
-      expect(updated.completedAt).toBeInstanceOf(Date);
-    });
-
-    it("should set cleanupAt for cleaning status", async () => {
-      const workspace = await repository.create({
-        path: "/tmp/workspace-cleanup",
-        status: "active",
-      });
-
-      const updated = await repository.updateStatus(workspace.id, "cleaning");
-      expect(updated.status).toBe("cleaning");
-      expect(updated.cleanupAt).toBeInstanceOf(Date);
-    });
-
-    it("should throw error for non-existent workspace", async () => {
-      await expect(
-        repository.updateStatus("non-existent-id", "completed")
-      ).rejects.toThrow("Workspace with id non-existent-id not found");
-    });
-  });
-
-  describe("delete", () => {
-    it("should remove workspace record", async () => {
-      const workspace = await repository.create({
-        path: "/tmp/workspace-delete",
-        status: "active",
-      });
-
-      await repository.delete(workspace.id);
-
-      const found = await repository.findById(workspace.id);
+    it("should return undefined for non-existent workspace", async () => {
+      const found = await service.getWorkspace("non-existent-id");
       expect(found).toBeUndefined();
     });
+  });
+
+  describe("getWorkspacePath", () => {
+    it("should return filesystem path for workspace", async () => {
+      const workspace = await service.createWorkspace();
+
+      const path = await service.getWorkspacePath(workspace.id);
+
+      expect(path).toBe(workspace.path);
+      expect(existsSync(path)).toBe(true);
+    });
 
     it("should throw error for non-existent workspace", async () => {
-      await expect(repository.delete("non-existent-id")).rejects.toThrow(
+      await expect(service.getWorkspacePath("non-existent-id")).rejects.toThrow(
         "Workspace with id non-existent-id not found"
       );
     });
   });
 
-  describe("update", () => {
-    it("should update workspace fields", async () => {
-      const workspace = await repository.create({
-        path: "/tmp/workspace-update",
-        status: "active",
-      });
+  describe("cleanupWorkspace", () => {
+    it("should remove directory and set status to cleaning", async () => {
+      const workspace = await service.createWorkspace();
+      expect(existsSync(workspace.path)).toBe(true);
 
-      const updated = await repository.update(workspace.id, {
-        branchName: "feature/new-branch",
-        status: "completed",
-      });
+      await service.cleanupWorkspace(workspace.id);
 
-      expect(updated.branchName).toBe("feature/new-branch");
-      expect(updated.status).toBe("completed");
+      // Directory should be removed
+      expect(existsSync(workspace.path)).toBe(false);
+
+      // Status should be cleaning
+      const updated = await service.getWorkspace(workspace.id);
+      expect(updated?.status).toBe("cleaning");
+      expect(updated?.cleanupAt).toBeInstanceOf(Date);
+    });
+
+    it("should handle already-deleted directories", async () => {
+      const workspace = await service.createWorkspace();
+
+      // Manually delete the directory
+      await rm(workspace.path, { recursive: true, force: true });
+
+      // Should not throw
+      await expect(service.cleanupWorkspace(workspace.id)).resolves.not.toThrow();
+    });
+
+    it("should throw error for non-existent workspace", async () => {
+      await expect(service.cleanupWorkspace("non-existent-id")).rejects.toThrow(
+        "Workspace with id non-existent-id not found"
+      );
     });
   });
 
-  describe("findAll", () => {
-    it("should return all workspaces", async () => {
-      await repository.create({ path: "/tmp/ws-1", status: "active" });
-      await repository.create({ path: "/tmp/ws-2", status: "completed" });
-      await repository.create({ path: "/tmp/ws-3", status: "error" });
+  describe("listActiveWorkspaces", () => {
+    it("should return only active workspaces", async () => {
+      const ws1 = await service.createWorkspace();
+      const ws2 = await service.createWorkspace();
+      const ws3 = await service.createWorkspace();
 
-      const all = await repository.findAll();
-      expect(all).toHaveLength(3);
+      // Mark one as completed
+      await service.updateStatus(ws2.id, "completed");
+
+      const active = await service.listActiveWorkspaces();
+
+      expect(active).toHaveLength(2);
+      expect(active.map((w) => w.id)).toContain(ws1.id);
+      expect(active.map((w) => w.id)).toContain(ws3.id);
+      expect(active.map((w) => w.id)).not.toContain(ws2.id);
+    });
+  });
+
+  describe("cleanupStaleWorkspaces", () => {
+    it("should cleanup workspaces older than threshold", async () => {
+      // Create workspace and manually set old createdAt
+      const workspace = await service.createWorkspace();
+
+      // Update the createdAt to be old (2 hours ago)
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+      sqlite.exec(
+        `UPDATE workspaces SET created_at = ${twoHoursAgo.getTime()} WHERE id = '${workspace.id}'`
+      );
+
+      // Create a new workspace that should not be cleaned
+      const newWorkspace = await service.createWorkspace();
+
+      // Cleanup with 1 hour threshold
+      const cleaned = await service.cleanupStaleWorkspaces(60 * 60 * 1000);
+
+      expect(cleaned).toBe(1);
+
+      // Old workspace should be cleaned
+      const oldWs = await service.getWorkspace(workspace.id);
+      expect(oldWs?.status).toBe("cleaning");
+
+      // New workspace should still be active
+      const newWs = await service.getWorkspace(newWorkspace.id);
+      expect(newWs?.status).toBe("active");
+    });
+
+    it("should return 0 when no stale workspaces exist", async () => {
+      await service.createWorkspace();
+
+      const cleaned = await service.cleanupStaleWorkspaces(60 * 60 * 1000);
+
+      expect(cleaned).toBe(0);
+    });
+  });
+
+  describe("updateStatus", () => {
+    it("should update workspace status", async () => {
+      const workspace = await service.createWorkspace();
+
+      const updated = await service.updateStatus(workspace.id, "completed");
+
+      expect(updated.status).toBe("completed");
+      expect(updated.completedAt).toBeInstanceOf(Date);
+    });
+  });
+
+  describe("updateBranchName", () => {
+    it("should update workspace branch name", async () => {
+      const workspace = await service.createWorkspace();
+
+      const updated = await service.updateBranchName(
+        workspace.id,
+        "feature/test-branch"
+      );
+
+      expect(updated.branchName).toBe("feature/test-branch");
+    });
+  });
+
+  describe("findByWorkerId", () => {
+    it("should find workspaces by worker ID", async () => {
+      await service.createWorkspace(testWorkerId);
+      await service.createWorkspace(testWorkerId);
+      await service.createWorkspace(); // No worker
+
+      const workspaces = await service.findByWorkerId(testWorkerId);
+
+      expect(workspaces).toHaveLength(2);
+      expect(workspaces.every((w) => w.workerId === testWorkerId)).toBe(true);
     });
   });
 });
