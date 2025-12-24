@@ -8,6 +8,7 @@ import { WorkItemService } from "./services/work-item.service.js";
 import { ConcurrencyLimitsService } from "./services/orchestration.service.js";
 import { workItemsRoutes } from "./routes/work-items.routes.js";
 import { githubAuthRoutes } from "./routes/github-auth.routes.js";
+import { githubWebhookRoutes } from "./routes/github-webhook.routes.js";
 import { repositoriesRoutes } from "./routes/repositories.routes.js";
 import { pullRequestsRoutes } from "./routes/pull-requests.routes.js";
 import { agentRuntimeRoutes } from "./routes/agent-runtime.routes.js";
@@ -60,6 +61,13 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
     // GitHub OAuth routes
     await app.register(githubAuthRoutes, {
       prefix: "/api/auth/github",
+      config,
+      db,
+    });
+
+    // GitHub webhook routes
+    await app.register(githubWebhookRoutes, {
+      prefix: "/api/webhooks/github",
       config,
       db,
     });

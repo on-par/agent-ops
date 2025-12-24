@@ -13,6 +13,7 @@ interface Config {
   githubClientId: string;
   githubClientSecret: string;
   githubCallbackUrl: string;
+  githubWebhookSecret: string;
   baseUrl: string;
   // Concurrency limits (em3.5)
   maxGlobalWorkers: number;
@@ -56,6 +57,7 @@ export function loadConfig(): Config {
     githubClientId: getEnvVar("GITHUB_CLIENT_ID", ""),
     githubClientSecret: getEnvVar("GITHUB_CLIENT_SECRET", ""),
     githubCallbackUrl: getEnvVar("GITHUB_CALLBACK_URL", `${baseUrl}/api/auth/github/callback`),
+    githubWebhookSecret: getEnvVar("GITHUB_WEBHOOK_SECRET", ""),
     baseUrl,
     // Concurrency limits (em3.5)
     maxGlobalWorkers: parseInt(getEnvVar("MAX_GLOBAL_WORKERS", "10"), 10),
