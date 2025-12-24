@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import * as schema from "../../../db/schema.js";
+import * as schema from "../../shared/db/schema.js";
 import {
   OrchestrationService,
   WorkItemQueueManager,
@@ -20,7 +20,7 @@ import { AgentLifecycleService } from "../../agent-runtime/services/agent-lifecy
 import { WorkItemRepository } from "../../work-items/repositories/work-item.repository.js";
 import { WorkerRepository } from "../../workers/repositories/worker.repository.js";
 import { AgentExecutionRepository } from "../../agent-runtime/repositories/agent-execution.repository.js";
-import type { NewWorkItem, NewWorker, NewTemplate, WorkItem, Worker } from "../../../db/schema.js";
+import type { NewWorkItem, NewWorker, NewTemplate, WorkItem, Worker } from "../../shared/db/schema.js";
 import { v4 as uuidv4 } from "uuid";
 
 describe("OrchestrationService", () => {

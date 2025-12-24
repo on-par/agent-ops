@@ -4,7 +4,7 @@ import {
   type WebSocketConnection,
   type WebSocketEvent,
 } from "./websocket-hub.service.js";
-import type { WorkerStatus } from "../db/schema.js";
+import type { WorkerStatus } from '../db/schema.js';
 
 /**
  * Mock WebSocket connection for testing

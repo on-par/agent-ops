@@ -6,7 +6,7 @@ import type {
   SuccessCriterion,
   WorkItem,
   NewWorkItem,
-} from "../../../db/schema.js";
+} from "../../shared/db/schema.js";
 import { randomUUID } from "crypto";
 
 /**

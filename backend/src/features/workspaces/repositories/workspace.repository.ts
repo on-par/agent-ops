@@ -1,12 +1,12 @@
 import { eq } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
-import type { DrizzleDatabase } from "../../../db/index.js";
+import type { DrizzleDatabase } from "../../shared/db/index.js";
 import {
   workspaces,
   type Workspace,
   type NewWorkspace,
   type WorkspaceStatus,
-} from "../../../db/schema.js";
+} from "../../shared/db/schema.js";
 
 /**
  * Repository for managing Workspace entities using Drizzle ORM

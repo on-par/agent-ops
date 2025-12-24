@@ -1,21 +1,21 @@
 import { v4 as uuidv4 } from "uuid";
-import type { WorkItemRepository } from "../features/work-items/repositories/work-item.repository.js";
-import type { WorkerRepository } from "../features/workers/repositories/worker.repository.js";
-import type { AgentExecutionRepository } from "../features/agent-runtime/repositories/agent-execution.repository.js";
-import type { TemplateRepository } from "../features/templates/repositories/template.repository.js";
+import type { WorkItemRepository } from "../../work-items/repositories/work-item.repository.js";
+import type { WorkerRepository } from "../../workers/repositories/worker.repository.js";
+import type { AgentExecutionRepository } from "../../agent-runtime/repositories/agent-execution.repository.js";
+import type { TemplateRepository } from "../../templates/repositories/template.repository.js";
 import type { WorkflowEngineService } from "./workflow-engine.service.js";
-import type { WorkerPoolService } from "../features/workers/services/worker-pool.service.js";
+import type { WorkerPoolService } from "../../workers/services/worker-pool.service.js";
 import type {
   AgentExecutorService,
   ExecutionContext as AgentExecutionContext,
   ExecutionResult,
-} from "../features/agent-runtime/services/agent-executor.service.js";
+} from "../../agent-runtime/services/agent-executor.service.js";
 import type {
   AgentLifecycleService,
   ExecutionContext as LifecycleExecutionContext,
-} from "../features/agent-runtime/services/agent-lifecycle.service.js";
-import type { ObservabilityService } from "./observability.service.js";
-import type { WebSocketHubService } from "./websocket-hub.service.js";
+} from "../../agent-runtime/services/agent-lifecycle.service.js";
+import type { ObservabilityService } from "../../../shared/observability/observability.service.js";
+import type { WebSocketHubService } from "../../../shared/websocket/websocket-hub.service.js";
 import type {
   WorkItem,
   Worker,
@@ -23,7 +23,7 @@ import type {
   AgentRole,
   WorkItemStatus,
   WorkItemType,
-} from "../db/schema.js";
+} from '../../../shared/db/schema.js';
 
 // ============================================================================
 // Types & Interfaces

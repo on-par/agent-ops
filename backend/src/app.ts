@@ -1,8 +1,8 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
-import type { Config } from "./config.js";
-import type { DrizzleDatabase } from "./db/index.js";
+import type { Config } from "./shared/config.js";
+import type { DrizzleDatabase } from "./shared/db/index.js";
 import { WorkItemRepository } from "./features/work-items/repositories/work-item.repository.js";
 import { WorkItemService } from "./features/work-items/services/work-item.service.js";
 import { ConcurrencyLimitsService } from "./features/orchestration/services/orchestration.service.js";

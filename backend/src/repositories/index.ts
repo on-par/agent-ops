@@ -10,5 +10,5 @@ export { WorkItemRepository } from "../features/work-items/repositories/work-ite
 export { WorkerRepository } from "../features/workers/repositories/worker.repository.js";
 export { GitHubConnectionRepository } from "../features/github/repositories/github-connection.repository.js";
 export { RepositoryRepository } from "../features/repositories/repositories/repository.repository.js";
-export { WorkspaceRepository } from "./workspace.repository.js";
+export { WorkspaceRepository } from "../features/workspaces/repositories/workspace.repository.js";
 export { AgentExecutionRepository } from "../features/agent-runtime/repositories/agent-execution.repository.js";

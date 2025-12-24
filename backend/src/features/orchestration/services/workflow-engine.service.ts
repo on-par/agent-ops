@@ -1,11 +1,11 @@
-import type { WorkItemRepository } from "../features/work-items/repositories/work-item.repository.js";
-import type { WorkerRepository } from "../features/workers/repositories/worker.repository.js";
+import type { WorkItemRepository } from "../../work-items/repositories/work-item.repository.js";
+import type { WorkerRepository } from "../../workers/repositories/worker.repository.js";
 import type {
   WorkItem,
   WorkItemStatus,
   AgentRole,
-} from "../db/schema.js";
-import type { Transition } from "../models/work-item.js";
+} from '../../../shared/db/schema.js';
+import type { Transition } from "../../../models/work-item.js";
 
 /**
  * Workflow state information for a work item

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import * as schema from "../db/schema.js";
+import * as schema from '../db/schema.js';
 import { ObservabilityService } from "./observability.service.js";
 import type {
   NewTrace,
@@ -9,7 +9,7 @@ import type {
   NewTemplate,
   NewWorkItem,
   TraceEventType,
-} from "../db/schema.js";
+} from '../db/schema.js';
 
 describe("ObservabilityService", () => {
   let sqlite: Database.Database;

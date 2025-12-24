@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { GitHubPRService } from "../services/github-pr.service.js";
-import type { DrizzleDatabase } from "../../../db/index.js";
+import type { DrizzleDatabase } from "../../shared/db/index.js";
 
 interface PullRequestsHandlerOptions extends FastifyPluginOptions {
   db: DrizzleDatabase;

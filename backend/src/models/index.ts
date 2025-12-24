@@ -43,7 +43,7 @@ export {
   type MetricUpdateData,
   type ErrorData,
   type ApprovalRequiredData,
-} from "./trace.js";
+} from "../shared/telemetry/trace.js";
 
 export {
   // Template schemas
@@ -77,4 +77,4 @@ export {
   type UpdateAgentWorker,
   type WorkerPool,
   type WorkerMetrics,
-} from "./worker.js";
+} from "../features/workers/models/worker.js";

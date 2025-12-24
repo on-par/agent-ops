@@ -3,7 +3,7 @@ import { Octokit } from "octokit";
 import { RepositoryRepository } from "../repositories/repository.repository.js";
 import { GitHubConnectionRepository } from "../../github/repositories/github-connection.repository.js";
 import { GitHubSyncService } from "../../github/services/github-sync.service.js";
-import type { DrizzleDatabase } from "../../../db/index.js";
+import type { DrizzleDatabase } from "../../shared/db/index.js";
 
 interface RepositoriesRoutesOptions extends FastifyPluginOptions {
   db: DrizzleDatabase;

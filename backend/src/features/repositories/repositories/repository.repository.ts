@@ -1,12 +1,12 @@
 import { eq } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
-import type { DrizzleDatabase } from "../../../db/index.js";
+import type { DrizzleDatabase } from "../../shared/db/index.js";
 import {
   repositories,
   type Repository,
   type NewRepository,
   type RepoSyncStatus,
-} from "../../../db/schema.js";
+} from "../../shared/db/schema.js";
 
 export class RepositoryRepository {
   constructor(private db: DrizzleDatabase) {}

@@ -1,5 +1,5 @@
 import { TemplateRepository } from "../repositories/template.repository.js";
-import type { Template, AgentRole, WorkItemType } from "../../../db/schema.js";
+import type { Template, AgentRole, WorkItemType } from "../../shared/db/schema.js";
 import type {
   CreateAgentTemplate,
   UpdateAgentTemplate,

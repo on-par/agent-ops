@@ -1,8 +1,8 @@
 import { eq, and, gte, lte, desc, sql, count } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { trace, SpanKind, type Span } from "@opentelemetry/api";
-import type { DrizzleDatabase } from "../db/index.js";
-import { traces, workers, type NewTrace, type TraceEventType, type Trace } from "../db/schema.js";
+import type { DrizzleDatabase } from '../db/index.js';
+import { traces, workers, type NewTrace, type TraceEventType, type Trace } from '../db/schema.js';
 
 const tracer = trace.getTracer("agent-ops");
 

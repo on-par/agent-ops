@@ -1,11 +1,11 @@
 import { eq, or } from "drizzle-orm";
-import type { DrizzleDatabase } from "../../../db/index.js";
+import type { DrizzleDatabase } from "../../shared/db/index.js";
 import {
   workers,
   type Worker,
   type NewWorker,
   type WorkerStatus,
-} from "../../../db/schema.js";
+} from "../../shared/db/schema.js";
 
 /**
  * Repository for managing Worker entities using Drizzle ORM

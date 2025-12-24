@@ -1,8 +1,8 @@
 import { exec } from "child_process";
 import { promisify } from "util";
-import type { DrizzleDatabase } from "../../../db/index.js";
+import type { DrizzleDatabase } from "../../shared/db/index.js";
 import { AgentExecutionRepository } from "../repositories/agent-execution.repository.js";
-import type { AgentExecutionOutput } from "../../../db/schema.js";
+import type { AgentExecutionOutput } from "../../shared/db/schema.js";
 
 const execAsync = promisify(exec);
 

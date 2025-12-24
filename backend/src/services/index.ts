@@ -12,7 +12,7 @@ export {
 export {
   WorkflowEngineService,
   type WorkflowState,
-} from "./workflow-engine.service.js";
+} from "../features/orchestration/services/workflow-engine.service.js";
 
 export {
   WorkerPoolService,
@@ -34,7 +34,7 @@ export {
   type ToolCallData,
   type ErrorData,
   type ApprovalRequiredData,
-} from "./observability.service.js";
+} from "../shared/observability/observability.service.js";
 
 export {
   WebSocketHubService,
@@ -42,7 +42,7 @@ export {
   type WebSocketEvent,
   type WebSocketEventType,
   type WebSocketWorkerMetrics,
-} from "./websocket-hub.service.js";
+} from "../shared/websocket/websocket-hub.service.js";
 
 export { TemplateRegistryService } from "../features/templates/services/template-registry.service.js";
 
@@ -62,14 +62,14 @@ export {
 export {
   WorkspaceManagerService,
   type WorkspaceManagerConfig,
-} from "./workspace-manager.service.js";
+} from "../features/workspaces/services/workspace-manager.service.js";
 
 export {
   GitOperationsService,
   type GitCloneOptions,
   type GitCommitOptions,
   type GitStatus,
-} from "./git-operations.service.js";
+} from "../shared/git/git-operations.service.js";
 
 export {
   AgentOutputCollectorService,
@@ -106,4 +106,4 @@ export {
   type RetryContext,
   type OrchestratorStatus,
   type ConcurrencyStatus,
-} from "./orchestration.service.js";
+} from "../features/orchestration/services/orchestration.service.js";

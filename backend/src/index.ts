@@ -1,7 +1,7 @@
-import { initTelemetry } from "./telemetry.js";
+import { initTelemetry } from "./shared/telemetry.js";
 import { buildApp } from "./app.js";
-import { loadConfig, getListenOptions } from "./config.js";
-import { createDatabase } from "./db/index.js";
+import { loadConfig, getListenOptions } from "./shared/config.js";
+import { createDatabase } from "./shared/db/index.js";
 
 // Initialize OpenTelemetry before anything else
 initTelemetry();
