@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import * as schema from "../db/schema.js";
+import * as schema from "../../../db/schema.js";
 import {
   OrchestrationService,
   WorkItemQueueManager,
@@ -11,16 +11,16 @@ import {
   ConcurrencyLimitsService,
   type OrchestrationConfig,
   type AssignmentScoringWeights,
-} from "./orchestration.service.js";
-import { TemplateRepository } from "../features/templates/repositories/template.repository.js";
-import { WorkflowEngineService } from "./workflow-engine.service.js";
-import { WorkerPoolService } from "../features/workers/services/worker-pool.service.js";
-import { AgentExecutorService } from "../features/agent-runtime/services/agent-executor.service.js";
-import { AgentLifecycleService } from "../features/agent-runtime/services/agent-lifecycle.service.js";
-import { WorkItemRepository } from "../features/work-items/repositories/work-item.repository.js";
-import { WorkerRepository } from "../features/workers/repositories/worker.repository.js";
-import { AgentExecutionRepository } from "../features/agent-runtime/repositories/agent-execution.repository.js";
-import type { NewWorkItem, NewWorker, NewTemplate, WorkItem, Worker } from "../db/schema.js";
+} from "../services/orchestration.service.js";
+import { TemplateRepository } from "../../templates/repositories/template.repository.js";
+import { WorkflowEngineService } from "../services/workflow-engine.service.js";
+import { WorkerPoolService } from "../../workers/services/worker-pool.service.js";
+import { AgentExecutorService } from "../../agent-runtime/services/agent-executor.service.js";
+import { AgentLifecycleService } from "../../agent-runtime/services/agent-lifecycle.service.js";
+import { WorkItemRepository } from "../../work-items/repositories/work-item.repository.js";
+import { WorkerRepository } from "../../workers/repositories/worker.repository.js";
+import { AgentExecutionRepository } from "../../agent-runtime/repositories/agent-execution.repository.js";
+import type { NewWorkItem, NewWorker, NewTemplate, WorkItem, Worker } from "../../../db/schema.js";
 import { v4 as uuidv4 } from "uuid";
 
 describe("OrchestrationService", () => {

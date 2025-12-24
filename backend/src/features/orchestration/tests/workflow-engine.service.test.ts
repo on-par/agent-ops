@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import * as schema from "../db/schema.js";
-import { WorkflowEngineService } from "./workflow-engine.service.js";
-import { WorkItemRepository } from "../features/work-items/repositories/work-item.repository.js";
-import { WorkerRepository } from "../features/workers/repositories/worker.repository.js";
-import type { NewWorkItem, NewWorker, NewTemplate } from "../db/schema.js";
+import * as schema from "../../../db/schema.js";
+import { WorkflowEngineService } from "../services/workflow-engine.service.js";
+import { WorkItemRepository } from "../../work-items/repositories/work-item.repository.js";
+import { WorkerRepository } from "../../workers/repositories/worker.repository.js";
+import type { NewWorkItem, NewWorker, NewTemplate } from "../../../db/schema.js";
 import { v4 as uuidv4 } from "uuid";
 
 describe("WorkflowEngineService", () => {

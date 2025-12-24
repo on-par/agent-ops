@@ -3,7 +3,7 @@ import { z, ZodError } from "zod";
 import {
   ConcurrencyLimitsService,
   type ConcurrencyStatus,
-} from "../../../services/orchestration.service.js";
+} from "../../orchestration/services/orchestration.service.js";
 
 export interface ConcurrencyHandlerOptions extends FastifyPluginOptions {
   concurrencyService: ConcurrencyLimitsService;

@@ -5,7 +5,7 @@ import type { Config } from "./config.js";
 import type { DrizzleDatabase } from "./db/index.js";
 import { WorkItemRepository } from "./features/work-items/repositories/work-item.repository.js";
 import { WorkItemService } from "./features/work-items/services/work-item.service.js";
-import { ConcurrencyLimitsService } from "./services/orchestration.service.js";
+import { ConcurrencyLimitsService } from "./features/orchestration/services/orchestration.service.js";
 import { workItemsHandler } from "./features/work-items/handler/work-items.handler.js";
 import { githubAuthHandler } from "./features/github/handler/github-auth.handler.js";
 import { githubWebhookHandler } from "./features/github/handler/github-webhook.handler.js";

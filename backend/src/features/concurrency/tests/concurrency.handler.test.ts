@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import Fastify, { type FastifyInstance } from "fastify";
 import { concurrencyHandler } from "../handler/concurrency.handler.js";
-import { ConcurrencyLimitsService } from "../../../services/orchestration.service.js";
+import { ConcurrencyLimitsService } from "../../orchestration/services/orchestration.service.js";
 
 describe("Concurrency Handler", () => {
   let app: FastifyInstance;
