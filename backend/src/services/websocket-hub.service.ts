@@ -10,6 +10,7 @@ export type WebSocketEventType =
   | "work_item:created"
   | "work_item:updated"
   | "work_item:status_changed"
+  | "work_item:progress"
   | "work_item:deleted"
   | "metrics:updated"
   | "error"
@@ -278,6 +279,40 @@ export class WebSocketHubService {
     };
 
     // Broadcast to agent-specific channel
+    this.broadcastToChannel(`agent:${workerId}`, event);
+
+    // Also broadcast to "all" channel
+    this.broadcastToChannel("all", event);
+  }
+
+  /**
+   * Progress event data structure
+   */
+  notifyWorkItemProgress(
+    workItemId: string,
+    workerId: string,
+    progressData: {
+      status: "started" | "in_progress" | "milestone" | "blocked" | "completed" | "failed";
+      message?: string;
+      progress?: number;
+      executionId?: string;
+    }
+  ): void {
+    const event: WebSocketEvent = {
+      type: "work_item:progress",
+      timestamp: Date.now(),
+      data: {
+        workItemId,
+        workerId,
+        ...progressData,
+      },
+      channel: `workItem:${workItemId}`,
+    };
+
+    // Broadcast to work item-specific channel
+    this.broadcastToChannel(`workItem:${workItemId}`, event);
+
+    // Also broadcast to agent-specific channel
     this.broadcastToChannel(`agent:${workerId}`, event);
 
     // Also broadcast to "all" channel

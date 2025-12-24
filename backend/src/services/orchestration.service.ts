@@ -676,7 +676,15 @@ export class AgentAssignmentService {
 
 /**
  * Tracks agent progress on work items
- * Emits events for UI updates
+ * Updates WorkItem status and emits events for UI
+ *
+ * Progress Status Flow:
+ * - started: Agent has begun working on the item
+ * - in_progress: Agent is actively working, with periodic progress updates
+ * - milestone: Agent has reached a significant milestone
+ * - blocked: Agent is blocked and cannot proceed
+ * - completed: Agent has successfully completed the work
+ * - failed: Agent encountered an error and could not complete
  */
 export class ProgressTrackingService {
   private progressMap: Map<string, ProgressEvent[]> = new Map();
@@ -689,15 +697,18 @@ export class ProgressTrackingService {
   ) {}
 
   /**
-   * Record a progress event
+   * Record a progress event and update WorkItem
    */
   async recordProgress(event: ProgressEvent): Promise<void> {
-    // Store in memory
+    // Store in memory for history tracking
     const events = this.progressMap.get(event.workItemId) || [];
     events.push(event);
     this.progressMap.set(event.workItemId, events);
 
-    // Emit to observability if available
+    // Update WorkItem in database based on progress status
+    await this.updateWorkItemFromProgress(event);
+
+    // Emit to observability service for tracing
     if (this.observability) {
       await this.observability.recordWorkItemUpdate(event.workItemId, {
         status: event.status,
@@ -706,13 +717,24 @@ export class ProgressTrackingService {
       });
     }
 
-    // Broadcast via WebSocket if available
+    // Broadcast progress via WebSocket using dedicated progress event
     if (this.websocket) {
-      this.websocket.broadcast({
-        type: "work_item:updated",
-        timestamp: Date.now(),
-        data: event,
-      });
+      const progressData: {
+        status: ProgressEvent["status"];
+        message?: string;
+        progress?: number;
+        executionId?: string;
+      } = { status: event.status };
+
+      if (event.message !== undefined) progressData.message = event.message;
+      if (event.progress !== undefined) progressData.progress = event.progress;
+      if (event.executionId !== undefined) progressData.executionId = event.executionId;
+
+      this.websocket.notifyWorkItemProgress(
+        event.workItemId,
+        event.workerId,
+        progressData
+      );
     }
 
     // Notify local listeners
@@ -720,7 +742,61 @@ export class ProgressTrackingService {
   }
 
   /**
+   * Update WorkItem status based on progress event
+   * Maps progress status to WorkItem workflow status where appropriate
+   */
+  private async updateWorkItemFromProgress(event: ProgressEvent): Promise<void> {
+    try {
+      const updates: Partial<WorkItem> = {
+        updatedAt: event.timestamp,
+      };
+
+      switch (event.status) {
+        case "started":
+          // Mark as in_progress when work starts
+          updates.status = "in_progress";
+          updates.startedAt = event.timestamp;
+          break;
+
+        case "completed":
+          // Mark as review when completed (workflow transition)
+          updates.status = "review";
+          updates.completedAt = event.timestamp;
+          break;
+
+        case "failed":
+          // Keep status as in_progress, the error handling service
+          // will transition to backlog if no more retries
+          break;
+
+        case "blocked":
+          // Keep status as in_progress but log the blocked state
+          // This is tracked via observability, not workflow status
+          break;
+
+        case "in_progress":
+        case "milestone":
+          // These are progress updates, don't change workflow status
+          // Just update the timestamp
+          break;
+      }
+
+      // Only update if there are actual changes
+      if (Object.keys(updates).length > 1) {
+        await this.workItemRepo.update(event.workItemId, updates);
+      }
+    } catch (error) {
+      // Log but don't throw - progress tracking shouldn't fail the execution
+      console.error(
+        `[ProgressTracking] Failed to update WorkItem ${event.workItemId}:`,
+        error
+      );
+    }
+  }
+
+  /**
    * Mark work item as started
+   * Updates WorkItem status to in_progress
    */
   async markStarted(
     workItemId: string,
@@ -739,7 +815,28 @@ export class ProgressTrackingService {
   }
 
   /**
+   * Update progress during execution
+   * Use this for periodic progress updates while work is ongoing
+   */
+  async updateProgress(
+    workItemId: string,
+    workerId: string,
+    progress: number,
+    message?: string
+  ): Promise<void> {
+    await this.recordProgress({
+      workItemId,
+      workerId,
+      status: "in_progress",
+      message: message || `Progress: ${progress}%`,
+      progress: Math.min(99, Math.max(0, progress)), // Clamp to 0-99, 100 is reserved for completed
+      timestamp: new Date(),
+    });
+  }
+
+  /**
    * Mark work item as completed
+   * Updates WorkItem status to review
    */
   async markCompleted(
     workItemId: string,
@@ -762,6 +859,7 @@ export class ProgressTrackingService {
 
   /**
    * Mark work item as failed
+   * Keeps WorkItem in in_progress status for retry handling
    */
   async markFailed(
     workItemId: string,
@@ -781,6 +879,7 @@ export class ProgressTrackingService {
 
   /**
    * Mark work item as blocked
+   * Agent cannot proceed due to external dependency
    */
   async markBlocked(
     workItemId: string,
@@ -797,7 +896,8 @@ export class ProgressTrackingService {
   }
 
   /**
-   * Record a milestone
+   * Record a milestone achievement
+   * Milestones are significant progress points during execution
    */
   async recordMilestone(
     workItemId: string,
@@ -817,19 +917,57 @@ export class ProgressTrackingService {
 
   /**
    * Get progress history for a work item
+   * Returns all progress events recorded for this work item
    */
   getProgressHistory(workItemId: string): ProgressEvent[] {
     return this.progressMap.get(workItemId) || [];
   }
 
   /**
+   * Get current progress for a work item
+   * Returns the most recent progress event or null if none
+   */
+  getCurrentProgress(workItemId: string): ProgressEvent | null {
+    const events = this.progressMap.get(workItemId);
+    if (!events || events.length === 0) {
+      return null;
+    }
+    return events[events.length - 1]!;
+  }
+
+  /**
+   * Check if a work item is currently being worked on
+   */
+  isInProgress(workItemId: string): boolean {
+    const current = this.getCurrentProgress(workItemId);
+    if (!current) {
+      return false;
+    }
+    return (
+      current.status === "started" ||
+      current.status === "in_progress" ||
+      current.status === "milestone"
+    );
+  }
+
+  /**
    * Add a progress listener
+   * Listener is called for every progress event
+   * Returns unsubscribe function
    */
   addListener(listener: (event: ProgressEvent) => void): () => void {
     this.listeners.push(listener);
     return () => {
       this.listeners = this.listeners.filter((l) => l !== listener);
     };
+  }
+
+  /**
+   * Clear progress history for a work item
+   * Used when work is cancelled or reset
+   */
+  clearProgress(workItemId: string): void {
+    this.progressMap.delete(workItemId);
   }
 }
 

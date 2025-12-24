@@ -708,7 +708,7 @@ describe("OrchestrationService", () => {
   });
 
   // ============================================================================
-  // ProgressTrackingService Tests
+  // ProgressTrackingService Tests (em3.3)
   // ============================================================================
 
   describe("ProgressTrackingService", () => {
@@ -775,6 +775,129 @@ describe("OrchestrationService", () => {
 
       // Only the first event should be recorded
       expect(events).toHaveLength(1);
+    });
+
+    describe("WorkItem Status Updates", () => {
+      it("should update WorkItem status to in_progress when started", async () => {
+        const workItem = await createTestWorkItem({ status: "ready" });
+        const worker = await createTestWorker();
+
+        await progressTracking.markStarted(workItem.id, worker.id, "exec-1");
+
+        const updatedWorkItem = await workItemRepo.findById(workItem.id);
+        expect(updatedWorkItem?.status).toBe("in_progress");
+        expect(updatedWorkItem?.startedAt).toBeDefined();
+      });
+
+      it("should update WorkItem status to review when completed", async () => {
+        const workItem = await createTestWorkItem({ status: "ready" });
+        const worker = await createTestWorker();
+
+        await progressTracking.markStarted(workItem.id, worker.id, "exec-1");
+        await progressTracking.markCompleted(workItem.id, worker.id, "exec-1");
+
+        const updatedWorkItem = await workItemRepo.findById(workItem.id);
+        expect(updatedWorkItem?.status).toBe("review");
+        expect(updatedWorkItem?.completedAt).toBeDefined();
+      });
+
+      it("should not change WorkItem status when failed", async () => {
+        const workItem = await createTestWorkItem({ status: "ready" });
+        const worker = await createTestWorker();
+
+        await progressTracking.markStarted(workItem.id, worker.id, "exec-1");
+        await progressTracking.markFailed(workItem.id, worker.id, "exec-1", "Test error");
+
+        const updatedWorkItem = await workItemRepo.findById(workItem.id);
+        // Status should still be in_progress (from markStarted)
+        expect(updatedWorkItem?.status).toBe("in_progress");
+      });
+    });
+
+    describe("Progress Tracking Methods", () => {
+      it("should update progress during execution", async () => {
+        const workItem = await createTestWorkItem({ status: "ready" });
+        const worker = await createTestWorker();
+
+        await progressTracking.markStarted(workItem.id, worker.id, "exec-1");
+        await progressTracking.updateProgress(workItem.id, worker.id, 50, "Halfway done");
+
+        const history = progressTracking.getProgressHistory(workItem.id);
+        expect(history).toHaveLength(2);
+        expect(history[1].status).toBe("in_progress");
+        expect(history[1].progress).toBe(50);
+        expect(history[1].message).toBe("Halfway done");
+      });
+
+      it("should clamp progress to 0-99 range", async () => {
+        const workItem = await createTestWorkItem({ status: "ready" });
+        const worker = await createTestWorker();
+
+        await progressTracking.updateProgress(workItem.id, worker.id, 150);
+        let current = progressTracking.getCurrentProgress(workItem.id);
+        expect(current?.progress).toBe(99);
+
+        progressTracking.clearProgress(workItem.id);
+
+        await progressTracking.updateProgress(workItem.id, worker.id, -50);
+        current = progressTracking.getCurrentProgress(workItem.id);
+        expect(current?.progress).toBe(0);
+      });
+
+      it("should get current progress", async () => {
+        const workItem = await createTestWorkItem({ status: "ready" });
+        const worker = await createTestWorker();
+
+        expect(progressTracking.getCurrentProgress(workItem.id)).toBeNull();
+
+        await progressTracking.markStarted(workItem.id, worker.id, "exec-1");
+        await progressTracking.updateProgress(workItem.id, worker.id, 25);
+        await progressTracking.updateProgress(workItem.id, worker.id, 75);
+
+        const current = progressTracking.getCurrentProgress(workItem.id);
+        expect(current?.progress).toBe(75);
+        expect(current?.status).toBe("in_progress");
+      });
+
+      it("should check if work item is in progress", async () => {
+        const workItem = await createTestWorkItem({ status: "ready" });
+        const worker = await createTestWorker();
+
+        expect(progressTracking.isInProgress(workItem.id)).toBe(false);
+
+        await progressTracking.markStarted(workItem.id, worker.id, "exec-1");
+        expect(progressTracking.isInProgress(workItem.id)).toBe(true);
+
+        await progressTracking.recordMilestone(workItem.id, worker.id, "Milestone", 50);
+        expect(progressTracking.isInProgress(workItem.id)).toBe(true);
+
+        await progressTracking.markBlocked(workItem.id, worker.id, "Blocked reason");
+        expect(progressTracking.isInProgress(workItem.id)).toBe(false);
+      });
+
+      it("should clear progress manually", async () => {
+        const workItem = await createTestWorkItem({ status: "ready" });
+        const worker = await createTestWorker();
+
+        await progressTracking.markStarted(workItem.id, worker.id, "exec-1");
+        expect(progressTracking.getProgressHistory(workItem.id)).toHaveLength(1);
+
+        progressTracking.clearProgress(workItem.id);
+        expect(progressTracking.getProgressHistory(workItem.id)).toHaveLength(0);
+      });
+
+      it("should mark work item as blocked", async () => {
+        const workItem = await createTestWorkItem({ status: "ready" });
+        const worker = await createTestWorker();
+
+        await progressTracking.markStarted(workItem.id, worker.id, "exec-1");
+        await progressTracking.markBlocked(workItem.id, worker.id, "Waiting for approval");
+
+        const history = progressTracking.getProgressHistory(workItem.id);
+        expect(history).toHaveLength(2);
+        expect(history[1].status).toBe("blocked");
+        expect(history[1].message).toBe("Blocked: Waiting for approval");
+      });
     });
   });
 
