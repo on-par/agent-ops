@@ -5,7 +5,7 @@ import type {
   WorkItemStatus,
   AgentRole,
 } from '../../../shared/db/schema.js';
-import type { Transition } from "../../../models/work-item.js";
+import type { Transition } from "../../work-items/models/work-item.js";
 
 /**
  * Workflow state information for a work item

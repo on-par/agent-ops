@@ -4,7 +4,7 @@ import type { WorkItemService } from "../services/work-item.service.js";
 import {
   WorkItemStatusSchema,
   WorkItemTypeSchema,
-} from "../../../models/work-item.js";
+} from "../models/work-item.js";
 import { agentRoles, type AgentRole } from "../../shared/db/schema.js";
 
 export interface WorkItemHandlerOptions extends FastifyPluginOptions {
