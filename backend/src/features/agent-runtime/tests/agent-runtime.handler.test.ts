@@ -2,9 +2,9 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Fastify, { type FastifyInstance } from "fastify";
-import * as schema from "../db/schema.js";
-import { agentRuntimeRoutes } from "./agent-runtime.routes.js";
-import type { Config } from "../config.js";
+import * as schema from "../../../db/schema.js";
+import { agentRuntimeRoutes } from "../handler/agent-runtime.handler.js";
+import type { Config } from "../../../config.js";
 import { v4 as uuidv4 } from "uuid";
 
 describe("Agent Runtime Routes", () => {

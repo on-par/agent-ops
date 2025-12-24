@@ -1,8 +1,8 @@
 import { v4 as uuidv4 } from "uuid";
-import type { DrizzleDatabase } from "../db/index.js";
+import type { DrizzleDatabase } from "../../../db/index.js";
 import { AgentExecutionRepository } from "../repositories/agent-execution.repository.js";
 import { AgentOutputCollectorService } from "./agent-output-collector.service.js";
-import type { AgentExecutionStatus, AgentExecutionOutput } from "../db/schema.js";
+import type { AgentExecutionStatus, AgentExecutionOutput } from "../../../db/schema.js";
 
 export interface ExecutionContext {
   workerId: string;

@@ -1,12 +1,12 @@
 import { eq } from "drizzle-orm";
-import type { DrizzleDatabase } from "../db/index.js";
+import type { DrizzleDatabase } from "../../../db/index.js";
 import {
   agentExecutions,
   type AgentExecution,
   type NewAgentExecution,
   type AgentExecutionStatus,
   type AgentExecutionOutput,
-} from "../db/schema.js";
+} from "../../../db/schema.js";
 
 /**
  * Repository for managing Agent Execution entities using Drizzle ORM

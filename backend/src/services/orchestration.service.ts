@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import type { WorkItemRepository } from "../repositories/work-item.repository.js";
 import type { WorkerRepository } from "../repositories/worker.repository.js";
-import type { AgentExecutionRepository } from "../repositories/agent-execution.repository.js";
+import type { AgentExecutionRepository } from "../features/agent-runtime/repositories/agent-execution.repository.js";
 import type { TemplateRepository } from "../repositories/template.repository.js";
 import type { WorkflowEngineService } from "./workflow-engine.service.js";
 import type { WorkerPoolService } from "./worker-pool.service.js";
@@ -9,11 +9,11 @@ import type {
   AgentExecutorService,
   ExecutionContext as AgentExecutionContext,
   ExecutionResult,
-} from "./agent-executor.service.js";
+} from "../features/agent-runtime/services/agent-executor.service.js";
 import type {
   AgentLifecycleService,
   ExecutionContext as LifecycleExecutionContext,
-} from "./agent-lifecycle.service.js";
+} from "../features/agent-runtime/services/agent-lifecycle.service.js";
 import type { ObservabilityService } from "./observability.service.js";
 import type { WebSocketHubService } from "./websocket-hub.service.js";
 import type {

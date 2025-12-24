@@ -7,7 +7,7 @@ import {
   type PostExecutionHook,
   type ErrorHook,
   type StatusChangeHook,
-} from "./agent-lifecycle.service.js";
+} from "../services/agent-lifecycle.service.js";
 
 describe("AgentLifecycleService", () => {
   let service: AgentLifecycleService;

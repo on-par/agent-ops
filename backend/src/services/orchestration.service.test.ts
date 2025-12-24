@@ -15,11 +15,11 @@ import {
 import { TemplateRepository } from "../repositories/template.repository.js";
 import { WorkflowEngineService } from "./workflow-engine.service.js";
 import { WorkerPoolService } from "./worker-pool.service.js";
-import { AgentExecutorService } from "./agent-executor.service.js";
-import { AgentLifecycleService } from "./agent-lifecycle.service.js";
+import { AgentExecutorService } from "../features/agent-runtime/services/agent-executor.service.js";
+import { AgentLifecycleService } from "../features/agent-runtime/services/agent-lifecycle.service.js";
 import { WorkItemRepository } from "../repositories/work-item.repository.js";
 import { WorkerRepository } from "../repositories/worker.repository.js";
-import { AgentExecutionRepository } from "../repositories/agent-execution.repository.js";
+import { AgentExecutionRepository } from "../features/agent-runtime/repositories/agent-execution.repository.js";
 import type { NewWorkItem, NewWorker, NewTemplate, WorkItem, Worker } from "../db/schema.js";
 import { v4 as uuidv4 } from "uuid";
 

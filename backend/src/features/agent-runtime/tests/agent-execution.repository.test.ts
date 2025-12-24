@@ -1,15 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import * as schema from "../db/schema.js";
-import { AgentExecutionRepository } from "./agent-execution.repository.js";
+import * as schema from "../../../db/schema.js";
+import { AgentExecutionRepository } from "../repositories/agent-execution.repository.js";
 import type {
   NewAgentExecution,
   NewTemplate,
   NewWorker,
   NewWorkItem,
   NewWorkspace,
-} from "../db/schema.js";
+} from "../../../db/schema.js";
 import { v4 as uuidv4 } from "uuid";
 
 describe("AgentExecutionRepository", () => {

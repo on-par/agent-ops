@@ -74,13 +74,13 @@ export {
 export {
   AgentOutputCollectorService,
   type CollectedOutput,
-} from "./agent-output-collector.service.js";
+} from "../features/agent-runtime/services/agent-output-collector.service.js";
 
 export {
   AgentExecutorService,
   type ExecutionContext,
   type ExecutionResult,
-} from "./agent-executor.service.js";
+} from "../features/agent-runtime/services/agent-executor.service.js";
 
 export {
   AgentLifecycleService,
@@ -89,7 +89,7 @@ export {
   type PostExecutionHook,
   type ErrorHook,
   type StatusChangeHook,
-} from "./agent-lifecycle.service.js";
+} from "../features/agent-runtime/services/agent-lifecycle.service.js";
 
 export {
   OrchestrationService,

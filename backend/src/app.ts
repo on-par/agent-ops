@@ -11,7 +11,7 @@ import { githubAuthRoutes } from "./routes/github-auth.routes.js";
 import { githubWebhookRoutes } from "./routes/github-webhook.routes.js";
 import { repositoriesRoutes } from "./routes/repositories.routes.js";
 import { pullRequestsRoutes } from "./routes/pull-requests.routes.js";
-import { agentRuntimeRoutes } from "./routes/agent-runtime.routes.js";
+import { agentRuntimeRoutes } from "./features/agent-runtime/handler/agent-runtime.handler.js";
 import { concurrencyRoutes } from "./routes/concurrency.routes.js";
 
 const HEALTH_STATUS_OK = "ok";
