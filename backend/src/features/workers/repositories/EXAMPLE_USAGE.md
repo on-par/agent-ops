@@ -5,7 +5,7 @@ This document demonstrates how to use the WorkerRepository class.
 ## Setup
 
 ```typescript
-import { createDatabase } from "../db/index.js";
+import { createDatabase } from "../../../db/index.js";
 import { WorkerRepository } from "./worker.repository.js";
 
 // Initialize database connection
@@ -128,7 +128,7 @@ try {
 ## Complete Example
 
 ```typescript
-import { createDatabase } from "../db/index.js";
+import { createDatabase } from "../../../db/index.js";
 import { WorkerRepository } from "./worker.repository.js";
 import { v4 as uuidv4 } from "uuid";
 
@@ -181,7 +181,7 @@ main().catch(console.error);
 The repository leverages TypeScript for full type safety:
 
 ```typescript
-import type { Worker, NewWorker, WorkerStatus } from "../db/schema.js";
+import type { Worker, NewWorker, WorkerStatus } from "../../../db/schema.js";
 
 // NewWorker type for creation (id, templateId, sessionId, spawnedAt required)
 const newWorker: NewWorker = {

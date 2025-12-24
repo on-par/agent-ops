@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import * as schema from "../db/schema.js";
+import * as schema from "../../../db/schema.js";
 import { WorkerRepository } from "../repositories/worker.repository.js";
-import { WorkerPoolService } from "./worker-pool.service.js";
-import type { NewWorker, NewTemplate, AgentRole } from "../db/schema.js";
+import { WorkerPoolService } from "../services/worker-pool.service.js";
+import type { NewWorker, NewTemplate, AgentRole } from "../../../db/schema.js";
 
 describe("WorkerPoolService", () => {
   let sqlite: Database.Database;

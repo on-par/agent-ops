@@ -4,7 +4,7 @@ import type { DrizzleDatabase } from "../../../db/index.js";
 import type { Config } from "../../../config.js";
 import { AgentExecutionRepository } from "../repositories/agent-execution.repository.js";
 import { WorkspaceRepository } from "../../../repositories/workspace.repository.js";
-import { WorkerRepository } from "../../../repositories/worker.repository.js";
+import { WorkerRepository } from "../../workers/repositories/worker.repository.js";
 import { WorkItemRepository } from "../../work-items/repositories/work-item.repository.js";
 import { v4 as uuidv4 } from "uuid";
 

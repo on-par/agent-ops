@@ -19,7 +19,7 @@ export {
   type WorkerPoolConfig,
   type MetricUpdate,
   type WorkerPoolSummary,
-} from "./worker-pool.service.js";
+} from "../features/workers/services/worker-pool.service.js";
 
 export {
   ObservabilityService,

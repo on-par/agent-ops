@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AgentRoleSchema } from "../features/templates/models/template.js";
+import { AgentRoleSchema } from "../../templates/models/template.js";
 
 /**
  * Worker status types representing the current state of an agent worker

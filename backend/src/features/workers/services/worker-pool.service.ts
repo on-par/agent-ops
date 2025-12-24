@@ -1,5 +1,5 @@
 import { WorkerRepository } from "../repositories/worker.repository.js";
-import type { AgentRole, Worker } from "../db/schema.js";
+import type { AgentRole, Worker } from "../../../db/schema.js";
 
 /**
  * Configuration for the Worker Pool

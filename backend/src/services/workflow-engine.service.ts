@@ -1,5 +1,5 @@
 import type { WorkItemRepository } from "../features/work-items/repositories/work-item.repository.js";
-import type { WorkerRepository } from "../repositories/worker.repository.js";
+import type { WorkerRepository } from "../features/workers/repositories/worker.repository.js";
 import type {
   WorkItem,
   WorkItemStatus,
