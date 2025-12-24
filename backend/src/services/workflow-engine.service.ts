@@ -129,7 +129,7 @@ export class WorkflowEngineService {
   async transition(
     workItemId: string,
     targetStatus: WorkItemStatus,
-    actorId?: string
+    _actorId?: string
   ): Promise<WorkItem> {
     const workItem = await this.workItemRepo.findById(workItemId);
     if (!workItem) {

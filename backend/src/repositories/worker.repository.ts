@@ -1,4 +1,4 @@
-import { eq, inArray, or } from "drizzle-orm";
+import { eq, or } from "drizzle-orm";
 import type { DrizzleDatabase } from "../db/index.js";
 import {
   workers,

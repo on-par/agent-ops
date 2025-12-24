@@ -2,15 +2,20 @@ import Fastify, { type FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import type { Config } from "./config.js";
+import type { DrizzleDatabase } from "./db/index.js";
+import { WorkItemRepository } from "./repositories/work-item.repository.js";
+import { WorkItemService } from "./services/work-item.service.js";
+import { workItemsRoutes } from "./routes/work-items.routes.js";
 
 const HEALTH_STATUS_OK = "ok";
 
 export interface AppOptions {
   config: Config;
+  db?: DrizzleDatabase;
 }
 
 export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
-  const { config } = options;
+  const { config, db } = options;
 
   const app = Fastify({
     logger: config.isDevelopment
@@ -36,6 +41,16 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   app.get("/health", async () => {
     return { status: HEALTH_STATUS_OK };
   });
+
+  // Register work items routes if database is provided
+  if (db) {
+    const workItemRepository = new WorkItemRepository(db);
+    const workItemService = new WorkItemService(workItemRepository);
+    await app.register(workItemsRoutes, {
+      prefix: "/api/work-items",
+      service: workItemService,
+    });
+  }
 
   return app;
 }

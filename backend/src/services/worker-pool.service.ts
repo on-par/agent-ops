@@ -359,7 +359,7 @@ export class WorkerPoolService {
    * @returns The updated worker
    * @throws Error if worker not found
    */
-  async reportError(workerId: string, error: string): Promise<Worker> {
+  async reportError(workerId: string, _error: string): Promise<Worker> {
     const worker = await this.workerRepository.findById(workerId);
     if (!worker) {
       throw new Error(`Worker with id ${workerId} not found`);

@@ -1,13 +1,18 @@
 import { initTelemetry } from "./telemetry.js";
 import { buildApp } from "./app.js";
 import { loadConfig, getListenOptions } from "./config.js";
+import { createDatabase } from "./db/index.js";
 
 // Initialize OpenTelemetry before anything else
 initTelemetry();
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  const app = await buildApp({ config });
+
+  // Create database connection
+  const { db } = createDatabase({ url: config.databaseUrl });
+
+  const app = await buildApp({ config, db });
 
   try {
     const listenOptions = getListenOptions(config);

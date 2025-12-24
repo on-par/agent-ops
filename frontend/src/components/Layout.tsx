@@ -23,6 +23,7 @@ export function Layout() {
 
   // Close mobile menu on route change
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Intentional: sync mobile menu state with route
     setIsMobileOpen(false);
   }, [location]);
 

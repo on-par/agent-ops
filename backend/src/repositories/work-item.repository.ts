@@ -1,4 +1,4 @@
-import { eq, and, sql, inArray } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import type { DrizzleDatabase } from "../db/index.js";
 import {
   workItems,

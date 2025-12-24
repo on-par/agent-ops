@@ -146,7 +146,7 @@ export class WebSocketHubService {
    */
   broadcast(event: WebSocketEvent): void {
     const serialized = JSON.stringify(event);
-    for (const [clientId, client] of Array.from(this.clients.entries())) {
+    for (const [_clientId, client] of Array.from(this.clients.entries())) {
       this._safeSend(client.connection, serialized);
     }
   }
@@ -159,7 +159,7 @@ export class WebSocketHubService {
    */
   broadcastToChannel(channel: string, event: WebSocketEvent): void {
     const serialized = JSON.stringify(event);
-    for (const [clientId, client] of Array.from(this.clients.entries())) {
+    for (const [_clientId, client] of Array.from(this.clients.entries())) {
       if (client.subscriptions.has(channel)) {
         this._safeSend(client.connection, serialized);
       }
@@ -298,7 +298,7 @@ export class WebSocketHubService {
         // OPEN
         connection.send(data);
       }
-    } catch (error) {
+    } catch {
       // Silently ignore send errors (connection may be in bad state)
       // In production, you might want to log this
     }
@@ -316,7 +316,7 @@ export class WebSocketHubService {
         // Not already CLOSED
         connection.close();
       }
-    } catch (error) {
+    } catch {
       // Silently ignore close errors
       // In production, you might want to log this
     }
