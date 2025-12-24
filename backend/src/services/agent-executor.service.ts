@@ -57,7 +57,9 @@ export class AgentExecutorService {
     this.repository = new AgentExecutionRepository(db);
     this.outputCollector = new AgentOutputCollectorService(db);
     this.activeExecutions = new Map();
-    this.claudeSDKQuery = claudeSDKQuery;
+    if (claudeSDKQuery !== undefined) {
+      this.claudeSDKQuery = claudeSDKQuery;
+    }
   }
 
   /**
@@ -122,16 +124,17 @@ export class AgentExecutorService {
         };
       }
 
-      // Collect output
+      // Collect output - build metrics object with only defined values
+      const metricsForCollection: { tokensUsed?: number; costUsd?: number; toolCallsCount?: number } = {};
+      if (result.tokensUsed !== undefined) metricsForCollection.tokensUsed = result.tokensUsed;
+      if (result.costUsd !== undefined) metricsForCollection.costUsd = result.costUsd;
+      if (result.toolCallsCount !== undefined) metricsForCollection.toolCallsCount = result.toolCallsCount;
+
       const output = await this.outputCollector.collectAll(
         executionId,
         context.workspacePath,
         startTime,
-        {
-          tokensUsed: result.tokensUsed,
-          costUsd: result.costUsd,
-          toolCallsCount: result.toolCallsCount,
-        },
+        metricsForCollection,
         undefined, // summary - could be extracted from result
         undefined  // logs - could be collected during execution
       );
@@ -204,11 +207,11 @@ export class AgentExecutorService {
     const result = await this.claudeSDKQuery(prompt, {
       workspacePath,
       sessionId,
-      onPreToolUse: (tool) => {
+      onPreToolUse: (_tool) => {
         toolCallCount++;
         // Could emit events here for observability
       },
-      onPostToolUse: (tool) => {
+      onPostToolUse: (_tool) => {
         // Could emit events here for observability
       },
       signal,

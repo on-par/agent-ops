@@ -9,6 +9,7 @@ import { workItemsRoutes } from "./routes/work-items.routes.js";
 import { githubAuthRoutes } from "./routes/github-auth.routes.js";
 import { repositoriesRoutes } from "./routes/repositories.routes.js";
 import { pullRequestsRoutes } from "./routes/pull-requests.routes.js";
+import { agentRuntimeRoutes } from "./routes/agent-runtime.routes.js";
 
 const HEALTH_STATUS_OK = "ok";
 
@@ -71,6 +72,13 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
     await app.register(pullRequestsRoutes, {
       prefix: "/api/pull-requests",
       db,
+    });
+
+    // Agent runtime routes
+    await app.register(agentRuntimeRoutes, {
+      prefix: "/api/agent-runtime",
+      db,
+      config,
     });
   }
 

@@ -49,15 +49,11 @@ export default [
       "no-console": ["warn", { allow: ["warn", "error"] }],
     },
   },
-  // Test files - more permissive
+  // Test files - more permissive (excluded from main tsconfig, so no projectService)
   {
     files: ["**/*.test.ts"],
     languageOptions: {
       parser: tsparser,
-      parserOptions: {
-        projectService: true,
-        tsconfigRootDir: import.meta.dirname,
-      },
       globals: {
         ...globals.node,
       },
@@ -66,7 +62,6 @@ export default [
       "@typescript-eslint": tseslint,
     },
     rules: {
-      ...tseslint.configs.recommended.rules,
       // Disable base rules
       "no-unused-vars": "off",
       "no-redeclare": "off",

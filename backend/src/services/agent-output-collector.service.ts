@@ -1,7 +1,5 @@
 import { exec } from "child_process";
 import { promisify } from "util";
-import { readdir, stat } from "fs/promises";
-import { join } from "path";
 import type { DrizzleDatabase } from "../db/index.js";
 import { AgentExecutionRepository } from "../repositories/agent-execution.repository.js";
 import type { AgentExecutionOutput } from "../db/schema.js";
@@ -110,13 +108,12 @@ export class AgentOutputCollectorService {
     executionId: string,
     output: CollectedOutput
   ): Promise<void> {
-    // Build the output object to save
-    const executionOutput: AgentExecutionOutput = {
-      summary: output.summary,
-      filesChanged: output.filesChanged,
-      diff: output.diff,
-      logs: output.logs,
-    };
+    // Build the output object to save, only including defined values
+    const executionOutput: AgentExecutionOutput = {};
+    if (output.summary !== undefined) executionOutput.summary = output.summary;
+    if (output.filesChanged !== undefined) executionOutput.filesChanged = output.filesChanged;
+    if (output.diff !== undefined) executionOutput.diff = output.diff;
+    if (output.logs !== undefined) executionOutput.logs = output.logs;
 
     // Save output to execution record
     await this.repository.setOutput(executionId, executionOutput);
@@ -164,13 +161,13 @@ export class AgentOutputCollectorService {
       this.collectMetrics(startTime, result),
     ]);
 
-    const output: CollectedOutput = {
-      summary,
-      filesChanged,
-      diff,
-      logs,
-      metrics,
-    };
+    // Build output object, only including defined values
+    const output: CollectedOutput = {};
+    if (summary !== undefined) output.summary = summary;
+    if (filesChanged.length > 0) output.filesChanged = filesChanged;
+    if (diff !== undefined) output.diff = diff;
+    if (logs !== undefined) output.logs = logs;
+    if (metrics !== undefined) output.metrics = metrics;
 
     await this.saveOutput(executionId, output);
 

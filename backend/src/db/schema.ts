@@ -181,6 +181,66 @@ export const workers = sqliteTable("workers", {
   errors: integer("errors").notNull().default(0),
 });
 
+// Workspace statuses
+export const workspaceStatuses = [
+  "active",
+  "completed",
+  "error",
+  "cleaning",
+] as const;
+export type WorkspaceStatus = (typeof workspaceStatuses)[number];
+
+// Workspaces table for agent execution environments
+export const workspaces = sqliteTable("workspaces", {
+  id: text("id").primaryKey(),
+  workerId: text("worker_id").references(() => workers.id),
+  workItemId: text("work_item_id").references(() => workItems.id),
+  repositoryId: text("repository_id").references(() => repositories.id),
+  path: text("path").notNull(),
+  branchName: text("branch_name"),
+  status: text("status").notNull().$type<WorkspaceStatus>().default("active"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  completedAt: integer("completed_at", { mode: "timestamp_ms" }),
+  cleanupAt: integer("cleanup_at", { mode: "timestamp_ms" }),
+});
+
+// Agent execution statuses
+export const agentExecutionStatuses = [
+  "pending",
+  "running",
+  "success",
+  "error",
+  "cancelled",
+] as const;
+export type AgentExecutionStatus = (typeof agentExecutionStatuses)[number];
+
+// Agent execution output interface
+export interface AgentExecutionOutput {
+  summary?: string;
+  filesChanged?: string[];
+  diff?: string;
+  logs?: string[];
+}
+
+// Agent Executions table for tracking agent runs
+export const agentExecutions = sqliteTable("agent_executions", {
+  id: text("id").primaryKey(),
+  workerId: text("worker_id").references(() => workers.id),
+  workItemId: text("work_item_id").references(() => workItems.id),
+  workspaceId: text("workspace_id").references(() => workspaces.id),
+  templateId: text("template_id").references(() => templates.id),
+  status: text("status").notNull().$type<AgentExecutionStatus>().default("pending"),
+  startedAt: integer("started_at", { mode: "timestamp_ms" }),
+  completedAt: integer("completed_at", { mode: "timestamp_ms" }),
+  durationMs: integer("duration_ms"),
+  tokensUsed: integer("tokens_used").notNull().default(0),
+  costUsd: real("cost_usd").notNull().default(0),
+  toolCallsCount: integer("tool_calls_count").notNull().default(0),
+  errorMessage: text("error_message"),
+  output: text("output", { mode: "json" }).$type<AgentExecutionOutput>(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
 // Traces table for observability
 export const traces = sqliteTable("traces", {
   id: text("id").primaryKey(),
@@ -288,3 +348,9 @@ export type NewGitHubConnection = typeof githubConnections.$inferInsert;
 
 export type Repository = typeof repositories.$inferSelect;
 export type NewRepository = typeof repositories.$inferInsert;
+
+export type Workspace = typeof workspaces.$inferSelect;
+export type NewWorkspace = typeof workspaces.$inferInsert;
+
+export type AgentExecution = typeof agentExecutions.$inferSelect;
+export type NewAgentExecution = typeof agentExecutions.$inferInsert;
