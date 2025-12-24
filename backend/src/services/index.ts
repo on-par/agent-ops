@@ -90,3 +90,20 @@ export {
   type ErrorHook,
   type StatusChangeHook,
 } from "./agent-lifecycle.service.js";
+
+export {
+  OrchestrationService,
+  WorkItemQueueManager,
+  AgentAssignmentService,
+  ProgressTrackingService,
+  ErrorHandlingService,
+  ConcurrencyLimitsService,
+  type OrchestrationConfig,
+  type QueueItem,
+  type AssignmentResult,
+  type ProgressEvent,
+  type ErrorCategory,
+  type RetryContext,
+  type OrchestratorStatus,
+  type ConcurrencyStatus,
+} from "./orchestration.service.js";
