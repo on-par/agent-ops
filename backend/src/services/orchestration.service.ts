@@ -976,10 +976,69 @@ export class ProgressTrackingService {
 // ============================================================================
 
 /**
- * Handles agent failures with categorization and retry logic
+ * Log levels for structured error logging
+ */
+export type LogLevel = "debug" | "info" | "warn" | "error";
+
+/**
+ * Structured error log entry
+ */
+export interface ErrorLogEntry {
+  timestamp: Date;
+  level: LogLevel;
+  workItemId: string;
+  workerId: string;
+  category: ErrorCategory;
+  message: string;
+  stack?: string;
+  retryCount: number;
+  willRetry: boolean;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Error history entry for tracking failures per work item
+ */
+export interface ErrorHistoryEntry {
+  workItemId: string;
+  errors: Array<{
+    timestamp: Date;
+    category: ErrorCategory;
+    message: string;
+    workerId: string;
+  }>;
+  totalFailures: number;
+  lastFailureAt: Date;
+  escalated: boolean;
+}
+
+/**
+ * Escalation event emitted when errors persist beyond retry limits
+ */
+export interface EscalationEvent {
+  workItemId: string;
+  workerId: string;
+  category: ErrorCategory;
+  totalFailures: number;
+  errorHistory: ErrorHistoryEntry;
+  timestamp: Date;
+  reason: string;
+}
+
+/**
+ * Escalation hook type
+ */
+export type EscalationHook = (event: EscalationEvent) => Promise<void>;
+
+/**
+ * Handles agent failures with categorization, retry logic, escalation, and logging
  */
 export class ErrorHandlingService {
   private retryQueue: Map<string, RetryContext> = new Map();
+  private errorHistory: Map<string, ErrorHistoryEntry> = new Map();
+  private escalationHooks: Map<string, EscalationHook> = new Map();
+  private logBuffer: ErrorLogEntry[] = [];
+  private maxLogBufferSize: number = 1000;
 
   constructor(
     private config: Pick<
@@ -990,58 +1049,88 @@ export class ErrorHandlingService {
 
   /**
    * Categorize an error for appropriate handling
+   * Enhanced with additional patterns for better classification
    */
   categorizeError(error: Error | string): ErrorCategory {
     const message = error instanceof Error ? error.message : error;
     const lowerMessage = message.toLowerCase();
 
-    // Rate limiting
+    // Rate limiting - check first as it's most specific
     if (
       lowerMessage.includes("rate limit") ||
       lowerMessage.includes("429") ||
-      lowerMessage.includes("too many requests")
+      lowerMessage.includes("too many requests") ||
+      lowerMessage.includes("quota exceeded") ||
+      lowerMessage.includes("throttl")
     ) {
       return "rate_limited";
     }
 
-    // Transient errors
+    // Transient errors - temporary network/service issues
     if (
       lowerMessage.includes("timeout") ||
+      lowerMessage.includes("timed out") ||
       lowerMessage.includes("network") ||
       lowerMessage.includes("connection") ||
+      lowerMessage.includes("econnrefused") ||
+      lowerMessage.includes("econnreset") ||
+      lowerMessage.includes("enotfound") ||
       lowerMessage.includes("temporarily") ||
+      lowerMessage.includes("unavailable") ||
       lowerMessage.includes("503") ||
-      lowerMessage.includes("502")
+      lowerMessage.includes("502") ||
+      lowerMessage.includes("504") ||
+      lowerMessage.includes("retry") ||
+      lowerMessage.includes("socket hang up")
     ) {
       return "transient";
     }
 
-    // Validation errors (check before resource to handle "resource not found")
-    if (
-      lowerMessage.includes("invalid") ||
-      lowerMessage.includes("validation") ||
-      lowerMessage.includes("not found") ||
-      lowerMessage.includes("400")
-    ) {
-      return "validation";
-    }
-
-    // Resource errors
+    // Resource errors - check before validation to correctly categorize resource issues
     if (
       lowerMessage.includes("memory") ||
       lowerMessage.includes("context window") ||
       lowerMessage.includes("token limit") ||
+      lowerMessage.includes("max tokens") ||
       lowerMessage.includes("resource exhausted") ||
-      lowerMessage.includes("out of resource")
+      lowerMessage.includes("out of resource") ||
+      lowerMessage.includes("insufficient") ||
+      lowerMessage.includes("limit exceeded") ||
+      lowerMessage.includes("heap") ||
+      lowerMessage.includes("allocation")
     ) {
       return "resource";
     }
 
-    // System errors
+    // Validation errors - client-side issues that won't be fixed by retry
+    if (
+      lowerMessage.includes("invalid") ||
+      lowerMessage.includes("validation") ||
+      lowerMessage.includes("not found") ||
+      lowerMessage.includes("does not exist") ||
+      lowerMessage.includes("400") ||
+      lowerMessage.includes("401") ||
+      lowerMessage.includes("403") ||
+      lowerMessage.includes("404") ||
+      lowerMessage.includes("malformed") ||
+      lowerMessage.includes("missing required") ||
+      lowerMessage.includes("unauthorized") ||
+      lowerMessage.includes("forbidden") ||
+      lowerMessage.includes("permission denied")
+    ) {
+      return "validation";
+    }
+
+    // System errors - server-side issues
     if (
       lowerMessage.includes("internal") ||
       lowerMessage.includes("500") ||
-      lowerMessage.includes("system")
+      lowerMessage.includes("system") ||
+      lowerMessage.includes("unexpected") ||
+      lowerMessage.includes("fatal") ||
+      lowerMessage.includes("crash") ||
+      lowerMessage.includes("segfault") ||
+      lowerMessage.includes("exception")
     ) {
       return "system";
     }
@@ -1050,45 +1139,63 @@ export class ErrorHandlingService {
   }
 
   /**
-   * Determine if an error should be retried
+   * Determine if an error should be retried based on category and attempt count
    */
   shouldRetry(category: ErrorCategory, retryCount: number): boolean {
-    // Never retry validation errors
+    // Never retry validation errors - they won't be fixed by retrying
     if (category === "validation") {
       return false;
     }
 
-    // Always retry rate limiting (up to max)
+    // Always retry rate limiting up to max - the delay will help
     if (category === "rate_limited") {
       return retryCount < this.config.maxRetryAttempts;
     }
 
-    // Retry transient errors
+    // Retry transient errors - they're expected to resolve
     if (category === "transient") {
       return retryCount < this.config.maxRetryAttempts;
     }
 
-    // Limited retries for other categories
+    // Limited retries for resource errors - may need worker restart
+    if (category === "resource") {
+      return retryCount < Math.min(2, this.config.maxRetryAttempts);
+    }
+
+    // Limited retries for system/unknown errors
     return retryCount < Math.min(2, this.config.maxRetryAttempts);
   }
 
   /**
-   * Calculate delay before next retry (exponential backoff with jitter)
+   * Calculate delay before next retry using exponential backoff with jitter
    */
   calculateRetryDelay(retryCount: number, category: ErrorCategory): number {
-    // Longer base delay for rate limiting
-    const baseDelay =
-      category === "rate_limited"
-        ? this.config.retryBaseDelayMs * 5
-        : this.config.retryBaseDelayMs;
+    // Different base delays based on error category
+    let baseDelay: number;
+    switch (category) {
+      case "rate_limited":
+        // Longer delays for rate limiting
+        baseDelay = this.config.retryBaseDelayMs * 5;
+        break;
+      case "resource":
+        // Moderate delays for resource issues (give time to free up)
+        baseDelay = this.config.retryBaseDelayMs * 3;
+        break;
+      case "system":
+        // Standard delays for system errors
+        baseDelay = this.config.retryBaseDelayMs * 2;
+        break;
+      default:
+        baseDelay = this.config.retryBaseDelayMs;
+    }
 
-    // Exponential backoff
+    // Exponential backoff: delay * 2^retryCount
     const exponentialDelay = baseDelay * Math.pow(2, retryCount);
 
     // Cap at max delay
     const cappedDelay = Math.min(exponentialDelay, this.config.retryMaxDelayMs);
 
-    // Add jitter (±20%)
+    // Add jitter (±20%) to prevent thundering herd
     const jitter = cappedDelay * 0.2 * (Math.random() - 0.5);
 
     return Math.floor(cappedDelay + jitter);
@@ -1096,6 +1203,7 @@ export class ErrorHandlingService {
 
   /**
    * Schedule a retry for a failed work item
+   * Returns null if no retry should be scheduled (max retries exceeded or non-retriable)
    */
   scheduleRetry(
     workItemId: string,
@@ -1122,7 +1230,7 @@ export class ErrorHandlingService {
   }
 
   /**
-   * Get work items ready for retry
+   * Get work items that are ready for retry (delay has elapsed)
    */
   getReadyRetries(): RetryContext[] {
     const now = Date.now();
@@ -1153,26 +1261,328 @@ export class ErrorHandlingService {
   }
 
   /**
-   * Log error with context for debugging
+   * Get a specific retry context
+   */
+  getRetryContext(workItemId: string): RetryContext | undefined {
+    return this.retryQueue.get(workItemId);
+  }
+
+  /**
+   * Get all pending retry contexts
+   */
+  getAllRetryContexts(): RetryContext[] {
+    return Array.from(this.retryQueue.values());
+  }
+
+  // ==================== ERROR HISTORY ====================
+
+  /**
+   * Record an error in the history for tracking and debugging
+   */
+  recordError(
+    workItemId: string,
+    workerId: string,
+    error: Error | string,
+    category: ErrorCategory
+  ): ErrorHistoryEntry {
+    const message = error instanceof Error ? error.message : error;
+    const now = new Date();
+
+    let entry = this.errorHistory.get(workItemId);
+    if (!entry) {
+      entry = {
+        workItemId,
+        errors: [],
+        totalFailures: 0,
+        lastFailureAt: now,
+        escalated: false,
+      };
+      this.errorHistory.set(workItemId, entry);
+    }
+
+    // Add new error to history (keep last 10 per work item)
+    entry.errors.push({
+      timestamp: now,
+      category,
+      message,
+      workerId,
+    });
+    if (entry.errors.length > 10) {
+      entry.errors.shift();
+    }
+
+    entry.totalFailures += 1;
+    entry.lastFailureAt = now;
+
+    return entry;
+  }
+
+  /**
+   * Get error history for a work item
+   */
+  getErrorHistory(workItemId: string): ErrorHistoryEntry | undefined {
+    return this.errorHistory.get(workItemId);
+  }
+
+  /**
+   * Clear error history for a work item (e.g., after successful completion)
+   */
+  clearErrorHistory(workItemId: string): void {
+    this.errorHistory.delete(workItemId);
+  }
+
+  /**
+   * Get all work items with errors
+   */
+  getAllErrorHistory(): ErrorHistoryEntry[] {
+    return Array.from(this.errorHistory.values());
+  }
+
+  // ==================== ESCALATION ====================
+
+  /**
+   * Register an escalation hook to be called when errors persist
+   * @param id - Unique identifier for this hook
+   * @param hook - Callback function to execute on escalation
+   */
+  registerEscalationHook(id: string, hook: EscalationHook): void {
+    this.escalationHooks.set(id, hook);
+  }
+
+  /**
+   * Unregister an escalation hook
+   */
+  unregisterEscalationHook(id: string): void {
+    this.escalationHooks.delete(id);
+  }
+
+  /**
+   * Escalate a persistent failure - call this when retries are exhausted
+   * Triggers all registered escalation hooks
+   */
+  async escalate(
+    workItemId: string,
+    workerId: string,
+    error: Error | string,
+    category: ErrorCategory
+  ): Promise<void> {
+    const history = this.getErrorHistory(workItemId);
+
+    // Mark as escalated
+    if (history) {
+      history.escalated = true;
+    }
+
+    const event: EscalationEvent = {
+      workItemId,
+      workerId,
+      category,
+      totalFailures: history?.totalFailures ?? 1,
+      errorHistory: history ?? {
+        workItemId,
+        errors: [],
+        totalFailures: 1,
+        lastFailureAt: new Date(),
+        escalated: true,
+      },
+      timestamp: new Date(),
+      reason: `Max retries (${this.config.maxRetryAttempts}) exceeded for ${category} error`,
+    };
+
+    // Log escalation
+    this.log("error", workItemId, workerId, category,
+      `Escalating persistent failure: ${error instanceof Error ? error.message : error}`,
+      this.config.maxRetryAttempts,
+      false,
+      { escalated: true, totalFailures: event.totalFailures }
+    );
+
+    // Run all escalation hooks
+    for (const [id, hook] of this.escalationHooks) {
+      try {
+        await hook(event);
+      } catch (hookError) {
+        console.error(`[ErrorHandling] Escalation hook ${id} failed:`, hookError);
+      }
+    }
+  }
+
+  /**
+   * Check if a work item has been escalated
+   */
+  isEscalated(workItemId: string): boolean {
+    const history = this.errorHistory.get(workItemId);
+    return history?.escalated ?? false;
+  }
+
+  // ==================== STRUCTURED LOGGING ====================
+
+  /**
+   * Log error with full context for debugging
+   * Stores in buffer and outputs to console with structured format
    */
   logError(
     workItemId: string,
     workerId: string,
     error: Error | string,
-    category: ErrorCategory
+    category: ErrorCategory,
+    retryCount: number = 0,
+    willRetry: boolean = false,
+    metadata?: Record<string, unknown>
   ): void {
     const message = error instanceof Error ? error.message : error;
     const stack = error instanceof Error ? error.stack : undefined;
 
-    console.error(
-      `[Orchestration] Error on work item ${workItemId} (worker: ${workerId})`,
+    this.log("error", workItemId, workerId, category, message, retryCount, willRetry, {
+      ...metadata,
+      stack,
+    });
+  }
+
+  /**
+   * Log with specified level
+   */
+  log(
+    level: LogLevel,
+    workItemId: string,
+    workerId: string,
+    category: ErrorCategory,
+    message: string,
+    retryCount: number,
+    willRetry: boolean,
+    metadata?: Record<string, unknown>
+  ): void {
+    const stackValue = metadata?.stack as string | undefined;
+    const metadataWithoutStack = metadata ? Object.fromEntries(
+      Object.entries(metadata).filter(([key]) => key !== "stack")
+    ) : undefined;
+    const hasMetadata = metadataWithoutStack && Object.keys(metadataWithoutStack).length > 0;
+
+    const entry: ErrorLogEntry = {
+      timestamp: new Date(),
+      level,
+      workItemId,
+      workerId,
+      category,
+      message,
+      retryCount,
+      willRetry,
+      ...(stackValue !== undefined && { stack: stackValue }),
+      ...(hasMetadata && { metadata: metadataWithoutStack }),
+    };
+
+    // Add to buffer
+    this.logBuffer.push(entry);
+    if (this.logBuffer.length > this.maxLogBufferSize) {
+      this.logBuffer.shift();
+    }
+
+    // Output to console with structured format
+    const logFn = level === "error" ? console.error :
+                  level === "warn" ? console.warn :
+                  level === "debug" ? console.debug : console.log;
+
+    const prefix = `[Orchestration:${level.toUpperCase()}]`;
+    const retryInfo = willRetry ? ` (will retry: attempt ${retryCount + 1}/${this.config.maxRetryAttempts})` :
+                      retryCount > 0 ? ` (retries exhausted after ${retryCount} attempts)` : "";
+
+    logFn(
+      `${prefix} [${category}] Work item ${workItemId} (worker: ${workerId})${retryInfo}: ${message}`,
       {
+        timestamp: entry.timestamp.toISOString(),
         category,
-        message,
-        stack,
-        timestamp: new Date().toISOString(),
+        workItemId,
+        workerId,
+        retryCount,
+        willRetry,
+        ...(entry.stack ? { stack: entry.stack } : {}),
+        ...(entry.metadata && Object.keys(entry.metadata).length > 0 ? { metadata: entry.metadata } : {}),
       }
     );
+  }
+
+  /**
+   * Get recent log entries
+   * @param limit - Maximum number of entries to return
+   * @param filter - Optional filter criteria
+   */
+  getRecentLogs(
+    limit: number = 100,
+    filter?: {
+      level?: LogLevel;
+      category?: ErrorCategory;
+      workItemId?: string;
+      workerId?: string;
+    }
+  ): ErrorLogEntry[] {
+    let logs = [...this.logBuffer];
+
+    // Apply filters
+    if (filter) {
+      if (filter.level) {
+        logs = logs.filter(log => log.level === filter.level);
+      }
+      if (filter.category) {
+        logs = logs.filter(log => log.category === filter.category);
+      }
+      if (filter.workItemId) {
+        logs = logs.filter(log => log.workItemId === filter.workItemId);
+      }
+      if (filter.workerId) {
+        logs = logs.filter(log => log.workerId === filter.workerId);
+      }
+    }
+
+    // Return most recent first, limited
+    return logs.slice(-limit).reverse();
+  }
+
+  /**
+   * Clear the log buffer
+   */
+  clearLogs(): void {
+    this.logBuffer = [];
+  }
+
+  /**
+   * Get error summary statistics
+   */
+  getErrorStats(): {
+    totalErrors: number;
+    byCategory: Record<ErrorCategory, number>;
+    byWorkItem: number;
+    escalatedCount: number;
+    pendingRetries: number;
+  } {
+    const byCategory: Record<ErrorCategory, number> = {
+      transient: 0,
+      rate_limited: 0,
+      resource: 0,
+      validation: 0,
+      system: 0,
+      unknown: 0,
+    };
+
+    let totalErrors = 0;
+    let escalatedCount = 0;
+
+    for (const history of this.errorHistory.values()) {
+      totalErrors += history.totalFailures;
+      if (history.escalated) {
+        escalatedCount++;
+      }
+      for (const error of history.errors) {
+        byCategory[error.category]++;
+      }
+    }
+
+    return {
+      totalErrors,
+      byCategory,
+      byWorkItem: this.errorHistory.size,
+      escalatedCount,
+      pendingRetries: this.retryQueue.size,
+    };
   }
 }
 
@@ -1636,6 +2046,9 @@ export class OrchestrationService {
           this.assignmentService.recordRepoExperience(worker.id, workItem.repositoryId);
         }
 
+        // Clear any error history on success (work item recovered)
+        this.errorHandling.clearErrorHistory(workItem.id);
+
         // Mark queue item complete
         this.queueManager.completeProcessing(workItem.id);
       } else if (result.status === "error" && result.error) {
@@ -1669,7 +2082,7 @@ export class OrchestrationService {
   }
 
   /**
-   * Handle an execution error
+   * Handle an execution error with enhanced logging, history tracking, and escalation
    */
   private async handleExecutionError(
     workItem: WorkItem,
@@ -1678,11 +2091,32 @@ export class OrchestrationService {
     error: string,
     retryCount: number
   ): Promise<void> {
-    // Categorize and log
+    // Categorize the error
     const category = this.errorHandling.categorizeError(error);
-    this.errorHandling.logError(workItem.id, worker.id, error, category);
 
-    // Track failure
+    // Record error in history for tracking
+    this.errorHandling.recordError(workItem.id, worker.id, error, category);
+
+    // Determine if we will retry
+    const willRetry = this.errorHandling.shouldRetry(category, retryCount);
+
+    // Log with enhanced structured logging
+    this.errorHandling.logError(
+      workItem.id,
+      worker.id,
+      error,
+      category,
+      retryCount,
+      willRetry,
+      {
+        executionId,
+        workItemType: workItem.type,
+        workItemTitle: workItem.title,
+        repositoryId: workItem.repositoryId,
+      }
+    );
+
+    // Track failure in progress service
     await this.progressTracking.markFailed(
       workItem.id,
       worker.id,
@@ -1690,7 +2124,7 @@ export class OrchestrationService {
       error
     );
 
-    // Run error hooks
+    // Run error hooks from lifecycle service
     const errorContext: LifecycleExecutionContext = {
       workerId: worker.id,
       workItemId: workItem.id,
@@ -1708,18 +2142,47 @@ export class OrchestrationService {
     );
 
     if (retryContext) {
-      console.log(
-        `[Orchestration] Scheduled retry for ${workItem.id} at ${retryContext.nextRetryAt.toISOString()}`
+      // Retry scheduled - log info level
+      this.errorHandling.log(
+        "info",
+        workItem.id,
+        worker.id,
+        category,
+        `Scheduled retry #${retryContext.retryCount} at ${retryContext.nextRetryAt.toISOString()}`,
+        retryCount,
+        true,
+        { nextRetryDelay: retryContext.nextRetryAt.getTime() - Date.now() }
       );
     } else {
-      // No more retries - mark as failed in workflow
-      // Move back to backlog for manual intervention
+      // No more retries - escalate the failure
+      await this.errorHandling.escalate(workItem.id, worker.id, error, category);
+
+      // Move work item back to backlog for manual intervention
       try {
         await this.workflowEngine.transition(workItem.id, "backlog");
+        this.errorHandling.log(
+          "warn",
+          workItem.id,
+          worker.id,
+          category,
+          "Work item transitioned to backlog after exhausting retries",
+          retryCount,
+          false,
+          { finalStatus: "backlog" }
+        );
       } catch (transitionError) {
-        console.error(
-          `[Orchestration] Failed to transition ${workItem.id} to backlog:`,
-          transitionError
+        const transitionMessage = transitionError instanceof Error
+          ? transitionError.message
+          : String(transitionError);
+        this.errorHandling.log(
+          "error",
+          workItem.id,
+          worker.id,
+          category,
+          `Failed to transition to backlog: ${transitionMessage}`,
+          retryCount,
+          false,
+          { transitionError: transitionMessage }
         );
       }
     }

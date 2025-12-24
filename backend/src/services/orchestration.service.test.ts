@@ -1030,6 +1030,240 @@ describe("OrchestrationService", () => {
       errorHandling.cancelRetry("work-1");
       expect(errorHandling.getPendingRetryCount()).toBe(0);
     });
+
+    // ==================== Enhanced Error Handling Tests (em3.4) ====================
+
+    describe("Enhanced Error Categorization", () => {
+      it("should categorize quota exceeded as rate limited", () => {
+        expect(errorHandling.categorizeError("Quota exceeded")).toBe("rate_limited");
+        expect(errorHandling.categorizeError("Request throttled")).toBe("rate_limited");
+      });
+
+      it("should categorize socket and connection errors as transient", () => {
+        expect(errorHandling.categorizeError("ECONNREFUSED")).toBe("transient");
+        expect(errorHandling.categorizeError("ECONNRESET")).toBe("transient");
+        expect(errorHandling.categorizeError("ENOTFOUND")).toBe("transient");
+        expect(errorHandling.categorizeError("socket hang up")).toBe("transient");
+        expect(errorHandling.categorizeError("504 Gateway Timeout")).toBe("transient");
+      });
+
+      it("should categorize resource exhaustion errors", () => {
+        expect(errorHandling.categorizeError("Max tokens exceeded")).toBe("resource");
+        expect(errorHandling.categorizeError("Insufficient memory")).toBe("resource");
+        expect(errorHandling.categorizeError("Heap allocation failed")).toBe("resource");
+      });
+
+      it("should categorize auth/permission errors as validation", () => {
+        expect(errorHandling.categorizeError("401 Unauthorized")).toBe("validation");
+        expect(errorHandling.categorizeError("403 Forbidden")).toBe("validation");
+        expect(errorHandling.categorizeError("Permission denied")).toBe("validation");
+        expect(errorHandling.categorizeError("Missing required field")).toBe("validation");
+      });
+
+      it("should categorize system errors", () => {
+        expect(errorHandling.categorizeError("Unexpected error")).toBe("system");
+        expect(errorHandling.categorizeError("Fatal crash")).toBe("system");
+        expect(errorHandling.categorizeError("Unhandled exception")).toBe("system");
+      });
+    });
+
+    describe("Error History Tracking", () => {
+      it("should record error history for work items", () => {
+        errorHandling.recordError("work-1", "worker-1", "Test error", "transient");
+
+        const history = errorHandling.getErrorHistory("work-1");
+        expect(history).toBeDefined();
+        expect(history?.totalFailures).toBe(1);
+        expect(history?.errors).toHaveLength(1);
+        expect(history?.errors[0].message).toBe("Test error");
+        expect(history?.errors[0].category).toBe("transient");
+      });
+
+      it("should accumulate errors in history", () => {
+        errorHandling.recordError("work-1", "worker-1", "Error 1", "transient");
+        errorHandling.recordError("work-1", "worker-2", "Error 2", "rate_limited");
+        errorHandling.recordError("work-1", "worker-1", "Error 3", "transient");
+
+        const history = errorHandling.getErrorHistory("work-1");
+        expect(history?.totalFailures).toBe(3);
+        expect(history?.errors).toHaveLength(3);
+      });
+
+      it("should limit error history to last 10 entries", () => {
+        for (let i = 0; i < 15; i++) {
+          errorHandling.recordError("work-1", "worker-1", `Error ${i}`, "transient");
+        }
+
+        const history = errorHandling.getErrorHistory("work-1");
+        expect(history?.totalFailures).toBe(15);
+        expect(history?.errors).toHaveLength(10);
+        expect(history?.errors[0].message).toBe("Error 5"); // Oldest kept
+        expect(history?.errors[9].message).toBe("Error 14"); // Newest
+      });
+
+      it("should clear error history", () => {
+        errorHandling.recordError("work-1", "worker-1", "Test error", "transient");
+        expect(errorHandling.getErrorHistory("work-1")).toBeDefined();
+
+        errorHandling.clearErrorHistory("work-1");
+        expect(errorHandling.getErrorHistory("work-1")).toBeUndefined();
+      });
+
+      it("should get all error history", () => {
+        errorHandling.recordError("work-1", "worker-1", "Error 1", "transient");
+        errorHandling.recordError("work-2", "worker-2", "Error 2", "rate_limited");
+
+        const allHistory = errorHandling.getAllErrorHistory();
+        expect(allHistory).toHaveLength(2);
+      });
+    });
+
+    describe("Escalation", () => {
+      it("should register and trigger escalation hooks", async () => {
+        const hookCalls: any[] = [];
+        errorHandling.registerEscalationHook("test-hook", async (event) => {
+          hookCalls.push(event);
+        });
+
+        await errorHandling.escalate("work-1", "worker-1", "Persistent error", "transient");
+
+        expect(hookCalls).toHaveLength(1);
+        expect(hookCalls[0].workItemId).toBe("work-1");
+        expect(hookCalls[0].workerId).toBe("worker-1");
+        expect(hookCalls[0].category).toBe("transient");
+        expect(hookCalls[0].reason).toContain("Max retries");
+      });
+
+      it("should mark work item as escalated", async () => {
+        errorHandling.recordError("work-1", "worker-1", "Test error", "transient");
+        expect(errorHandling.isEscalated("work-1")).toBe(false);
+
+        await errorHandling.escalate("work-1", "worker-1", "Persistent error", "transient");
+        expect(errorHandling.isEscalated("work-1")).toBe(true);
+      });
+
+      it("should unregister escalation hooks", async () => {
+        const hookCalls: any[] = [];
+        errorHandling.registerEscalationHook("test-hook", async (event) => {
+          hookCalls.push(event);
+        });
+
+        errorHandling.unregisterEscalationHook("test-hook");
+        await errorHandling.escalate("work-1", "worker-1", "Error", "transient");
+
+        expect(hookCalls).toHaveLength(0);
+      });
+
+      it("should continue running hooks even if one fails", async () => {
+        const hookCalls: string[] = [];
+
+        errorHandling.registerEscalationHook("failing-hook", async () => {
+          throw new Error("Hook failed");
+        });
+        errorHandling.registerEscalationHook("working-hook", async () => {
+          hookCalls.push("working");
+        });
+
+        await errorHandling.escalate("work-1", "worker-1", "Error", "transient");
+        expect(hookCalls).toContain("working");
+      });
+    });
+
+    describe("Structured Logging", () => {
+      it("should log errors with context", () => {
+        errorHandling.logError("work-1", "worker-1", "Test error", "transient", 1, true);
+
+        const logs = errorHandling.getRecentLogs(10);
+        expect(logs).toHaveLength(1);
+        expect(logs[0].workItemId).toBe("work-1");
+        expect(logs[0].workerId).toBe("worker-1");
+        expect(logs[0].category).toBe("transient");
+        expect(logs[0].retryCount).toBe(1);
+        expect(logs[0].willRetry).toBe(true);
+      });
+
+      it("should support log filtering", () => {
+        errorHandling.logError("work-1", "worker-1", "Error 1", "transient", 0, true);
+        errorHandling.logError("work-2", "worker-2", "Error 2", "rate_limited", 0, true);
+        errorHandling.logError("work-1", "worker-1", "Error 3", "validation", 0, false);
+
+        const transientLogs = errorHandling.getRecentLogs(10, { category: "transient" });
+        expect(transientLogs).toHaveLength(1);
+        expect(transientLogs[0].message).toBe("Error 1");
+
+        const work1Logs = errorHandling.getRecentLogs(10, { workItemId: "work-1" });
+        expect(work1Logs).toHaveLength(2);
+      });
+
+      it("should clear logs", () => {
+        errorHandling.logError("work-1", "worker-1", "Test error", "transient");
+        expect(errorHandling.getRecentLogs(10)).toHaveLength(1);
+
+        errorHandling.clearLogs();
+        expect(errorHandling.getRecentLogs(10)).toHaveLength(0);
+      });
+
+      it("should include stack traces for Error objects", () => {
+        const error = new Error("Test error with stack");
+        errorHandling.logError("work-1", "worker-1", error, "system");
+
+        const logs = errorHandling.getRecentLogs(10);
+        expect(logs[0].stack).toBeDefined();
+        expect(logs[0].stack).toContain("Error: Test error with stack");
+      });
+    });
+
+    describe("Error Statistics", () => {
+      it("should calculate error statistics", () => {
+        errorHandling.recordError("work-1", "worker-1", "Error 1", "transient");
+        errorHandling.recordError("work-1", "worker-2", "Error 2", "transient");
+        errorHandling.recordError("work-2", "worker-1", "Error 3", "rate_limited");
+        errorHandling.scheduleRetry("work-3", "Connection timeout", 0);
+
+        const stats = errorHandling.getErrorStats();
+        expect(stats.totalErrors).toBe(3);
+        expect(stats.byCategory.transient).toBe(2);
+        expect(stats.byCategory.rate_limited).toBe(1);
+        expect(stats.byWorkItem).toBe(2);
+        expect(stats.pendingRetries).toBe(1);
+      });
+
+      it("should track escalated count", async () => {
+        errorHandling.recordError("work-1", "worker-1", "Error", "transient");
+        await errorHandling.escalate("work-1", "worker-1", "Error", "transient");
+
+        const stats = errorHandling.getErrorStats();
+        expect(stats.escalatedCount).toBe(1);
+      });
+    });
+
+    describe("Retry Context Management", () => {
+      it("should get specific retry context", () => {
+        errorHandling.scheduleRetry("work-1", "Connection timeout", 0);
+
+        const context = errorHandling.getRetryContext("work-1");
+        expect(context).toBeDefined();
+        expect(context?.workItemId).toBe("work-1");
+      });
+
+      it("should get all retry contexts", () => {
+        errorHandling.scheduleRetry("work-1", "Connection timeout", 0);
+        errorHandling.scheduleRetry("work-2", "Network error", 0);
+
+        const contexts = errorHandling.getAllRetryContexts();
+        expect(contexts).toHaveLength(2);
+      });
+
+      it("should use different delays for different error categories", () => {
+        const transientDelay = errorHandling.calculateRetryDelay(0, "transient");
+        const resourceDelay = errorHandling.calculateRetryDelay(0, "resource");
+        const systemDelay = errorHandling.calculateRetryDelay(0, "system");
+
+        // Resource and system errors should have longer delays than transient
+        expect(resourceDelay).toBeGreaterThan(transientDelay);
+        expect(systemDelay).toBeGreaterThan(transientDelay);
+      });
+    });
   });
 
   // ============================================================================
