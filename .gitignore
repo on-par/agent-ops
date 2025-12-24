@@ -12,3 +12,7 @@ dist
 # Playwright test artifacts
 playwright-report/
 test-results/
+.playwright-mcp/
+
+# Temporary files created by Claude runs
+.claude-runs/

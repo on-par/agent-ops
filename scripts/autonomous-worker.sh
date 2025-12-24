@@ -7,12 +7,18 @@
 #   ./scripts/autonomous-worker.sh "em3|kpr"    # Multiple patterns (regex)
 #   ./scripts/autonomous-worker.sh --dry-run    # Show what would run
 #   ./scripts/autonomous-worker.sh em3 --max 3  # Limit to 3 tasks
+#   CLAUDE_CMD=ccymcp ./scripts/autonomous-worker.sh  # Use MCP-enabled claude
 #
 # Options:
 #   --dry-run     Show tasks without executing
 #   --max N       Maximum number of tasks to run
-#   --timeout M   Timeout per task in minutes (default: 30)
+#   --timeout M   Timeout per task in minutes (default: 60)
+#   --model M     Model to use: auto, sonnet, haiku (default: auto)
 #   --help        Show this help
+#
+# Environment:
+#   CLAUDE_CMD    Claude command to use (default: claude)
+#                 Set to your MCP-enabled alias for extra capabilities
 
 set -euo pipefail
 
@@ -20,8 +26,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORK_DIR="$(dirname "$SCRIPT_DIR")"
 LOG_DIR="$WORK_DIR/.claude-runs"
-DEFAULT_TIMEOUT=30
+DEFAULT_TIMEOUT=60
 MAX_TASKS=0  # 0 = unlimited
+CLAUDE_CMD="${CLAUDE_CMD:-claude}"  # Use env var or default to 'claude'
 
 # Colors for output
 RED='\033[0;31m'
@@ -34,6 +41,7 @@ NC='\033[0m' # No Color
 PATTERN=""
 DRY_RUN=false
 TIMEOUT_MINS=$DEFAULT_TIMEOUT
+MODEL_CHOICE="auto"  # auto, sonnet, or haiku
 
 show_help() {
     head -20 "$0" | tail -18 | sed 's/^# //' | sed 's/^#//'
@@ -54,6 +62,10 @@ while [[ $# -gt 0 ]]; do
             TIMEOUT_MINS="$2"
             shift 2
             ;;
+        --model)
+            MODEL_CHOICE="$2"
+            shift 2
+            ;;
         --help|-h)
             show_help
             ;;
@@ -66,15 +78,18 @@ done
 
 mkdir -p "$LOG_DIR"
 
+# Create timestamped main log file for this run
+MAIN_LOG="$LOG_DIR/main-$(date '+%Y-%m-%d-%H-%M-%S').log"
+
 log() {
-    echo -e "$(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$LOG_DIR/main.log"
+    echo -e "$(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$MAIN_LOG"
 }
 
 # Get list of ready tasks, optionally filtered by pattern
 get_ready_tasks() {
     local tasks
     # Parse: "1. [P1] agent-ops-em3.1: Title" -> "agent-ops-em3.1"
-    tasks=$(bd ready 2>/dev/null | grep -E '^\s*[0-9]+\.' | sed 's/.*] //' | cut -d: -f1)
+    tasks=$(bd ready --limit 100 2>/dev/null | grep -E '^\s*[0-9]+\.' | sed 's/.*] //' | cut -d: -f1)
 
     if [ -n "$PATTERN" ]; then
         echo "$tasks" | grep -E "$PATTERN" || true
@@ -86,7 +101,55 @@ get_ready_tasks() {
 # Get task details for display
 get_task_title() {
     local task_id="$1"
-    bd show "$task_id" 2>/dev/null | head -1 | sed 's/^#.*: //'
+    bd show "$task_id" --json 2>/dev/null | grep '"title"' | head -1 | sed 's/.*"title": "//; s/",$//'
+}
+
+# Assess task complexity and return appropriate model
+assess_model_for_task() {
+    local task_id="$1"
+
+    # If user specified a model, use it
+    if [ "$MODEL_CHOICE" != "auto" ]; then
+        echo "$MODEL_CHOICE"
+        return
+    fi
+
+    # Get task details for assessment
+    local task_info
+    task_info=$(bd show "$task_id" 2>/dev/null | head -20)
+
+    # Quick assessment prompt
+    local assess_prompt="Assess this task's complexity. Reply with ONLY 'sonnet' or 'haiku'.
+
+Use 'sonnet' for:
+- New feature implementation
+- Complex refactoring
+- Architecture changes
+- Multi-file changes
+- Anything requiring deep reasoning
+
+Use 'haiku' for:
+- Bug fixes
+- Simple updates
+- Documentation
+- Config changes
+- Single-file changes
+
+Task:
+$task_info
+
+Reply with ONLY the model name (sonnet or haiku):"
+
+    # Run quick assessment with haiku (fast and cheap)
+    local model_choice
+    model_choice=$(claude -p "$assess_prompt" --model haiku --max-turns 1 2>/dev/null | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+
+    # Validate response, default to sonnet if unclear
+    if [[ "$model_choice" == "haiku" ]]; then
+        echo "haiku"
+    else
+        echo "sonnet"  # Default to sonnet for complex/unclear tasks
+    fi
 }
 
 # Run a single task in isolated process
@@ -96,7 +159,11 @@ run_task() {
     local total="$3"
     local log_file="$LOG_DIR/${task_id}-$(date +%Y%m%d-%H%M%S).log"
 
-    log "${BLUE}[$task_num/$total]${NC} Starting ${YELLOW}$task_id${NC}"
+    # Determine which model to use
+    local model
+    model=$(assess_model_for_task "$task_id")
+
+    log "${BLUE}[$task_num/$total]${NC} Starting ${YELLOW}$task_id${NC} (model: $model)"
 
     # The prompt - focused and specific
     local prompt="You are autonomously implementing issue $task_id.
@@ -110,20 +177,28 @@ STEPS:
 6. If tests pass, commit your changes with a descriptive message
 7. Run: bd close $task_id
 8. Run: git push (IMPORTANT - always push your work)
+9. CLEANUP: Kill any processes you started (dev servers, watchers, etc.)
 
 GUIDELINES:
 - Follow existing code patterns in the codebase
 - Don't over-engineer - implement what's specified
 - If blocked or uncertain, document why and move on
 - Keep commits focused and atomic
+- ALWAYS clean up after yourself:
+  - Kill any background processes (npm run dev, watchers, servers)
+  - Use 'pkill -f' or 'kill' to terminate processes you started
+  - Check with 'ps aux | grep node' or similar before finishing
+  - Do NOT leave orphaned processes running
 
 Begin now."
 
     # Run claude in fresh process with timeout
     local start_time=$(date +%s)
 
-    if timeout "${TIMEOUT_MINS}m" claude -p "$prompt" \
+    if timeout "${TIMEOUT_MINS}m" $CLAUDE_CMD -p "$prompt" \
+        --model "$model" \
         --allowedTools "Read,Write,Edit,Bash,Glob,Grep,Task,TodoWrite" \
+        --dangerously-skip-permissions \
         2>&1 | tee "$log_file"; then
         local exit_code=0
     else
