@@ -58,3 +58,26 @@ export {
   type CreatePRInput,
   type PRResult,
 } from "./github-pr.service.js";
+
+export {
+  WorkspaceManagerService,
+  type WorkspaceManagerConfig,
+} from "./workspace-manager.service.js";
+
+export {
+  GitOperationsService,
+  type GitCloneOptions,
+  type GitCommitOptions,
+  type GitStatus,
+} from "./git-operations.service.js";
+
+export {
+  AgentOutputCollectorService,
+  type CollectedOutput,
+} from "./agent-output-collector.service.js";
+
+export {
+  AgentExecutorService,
+  type ExecutionContext,
+  type ExecutionResult,
+} from "./agent-executor.service.js";
