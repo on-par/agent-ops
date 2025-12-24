@@ -8,6 +8,7 @@ import { WorkItemService } from "./services/work-item.service.js";
 import { workItemsRoutes } from "./routes/work-items.routes.js";
 import { githubAuthRoutes } from "./routes/github-auth.routes.js";
 import { repositoriesRoutes } from "./routes/repositories.routes.js";
+import { pullRequestsRoutes } from "./routes/pull-requests.routes.js";
 
 const HEALTH_STATUS_OK = "ok";
 
@@ -63,6 +64,12 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
     // Repository management routes
     await app.register(repositoriesRoutes, {
       prefix: "/api/repositories",
+      db,
+    });
+
+    // Pull request routes
+    await app.register(pullRequestsRoutes, {
+      prefix: "/api/pull-requests",
       db,
     });
   }

@@ -52,3 +52,9 @@ export {
 } from "./github.service.js";
 
 export { GitHubSyncService } from "./github-sync.service.js";
+
+export {
+  GitHubPRService,
+  type CreatePRInput,
+  type PRResult,
+} from "./github-pr.service.js";
