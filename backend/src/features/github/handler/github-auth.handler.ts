@@ -1,13 +1,13 @@
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { randomBytes } from "crypto";
-import { GitHubService } from "../services/github.service.js";
-import { GitHubConnectionRepository } from "../repositories/github-connection.repository.js";
-import type { Config } from "../config.js";
-import type { DrizzleDatabase } from "../db/index.js";
+import type { GitHubService } from "../services/github.service.js";
+import type { GitHubConnectionRepository } from "../repositories/github-connection.repository.js";
+import type { Config } from "../../../config.js";
 
-interface GitHubAuthRoutesOptions extends FastifyPluginOptions {
+export interface GitHubAuthHandlerOptions extends FastifyPluginOptions {
   config: Config;
-  db: DrizzleDatabase;
+  githubService: GitHubService;
+  connectionRepo: GitHubConnectionRepository;
 }
 
 // In-memory state store for CSRF protection (use Redis in production)
@@ -23,13 +23,15 @@ function cleanupExpiredStates(): void {
   }
 }
 
-export async function githubAuthRoutes(
+/**
+ * GitHub OAuth Handler
+ * Provides authentication and connection management for GitHub
+ */
+export async function githubAuthHandler(
   app: FastifyInstance,
-  options: GitHubAuthRoutesOptions
+  options: GitHubAuthHandlerOptions
 ): Promise<void> {
-  const { config, db } = options;
-  const githubService = new GitHubService(config);
-  const connectionRepo = new GitHubConnectionRepository(db);
+  const { config, githubService, connectionRepo } = options;
 
   // Cleanup expired states periodically
   setInterval(cleanupExpiredStates, 60 * 1000);

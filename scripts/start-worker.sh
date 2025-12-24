@@ -17,7 +17,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-WORK_DIR="$(dirname "$SCRIPT_DIR")"
+# Use current directory as work dir (allows global install)
+WORK_DIR="${WORKER_DIR:-$(pwd)}"
 LOG_DIR="$WORK_DIR/.claude-runs"
 SESSION_NAME="claude-worker"
 
@@ -92,18 +93,29 @@ mkdir -p "$LOG_DIR"
 # Start tmux session with autonomous worker
 echo -e "${GREEN}Starting autonomous worker in tmux session: $SESSION_NAME${NC}"
 
-# Build the command (pass through CLAUDE_CMD if set)
-WORKER_CMD=""
-if [ -n "${CLAUDE_CMD:-}" ]; then
-    WORKER_CMD="CLAUDE_CMD='$CLAUDE_CMD' "
+# Find autonomous-worker.sh (same dir or PATH)
+if [ -x "$SCRIPT_DIR/autonomous-worker.sh" ]; then
+    WORKER_SCRIPT="$SCRIPT_DIR/autonomous-worker.sh"
+elif command -v autonomous-worker.sh &>/dev/null; then
+    WORKER_SCRIPT="autonomous-worker.sh"
+else
+    echo -e "${RED}Cannot find autonomous-worker.sh${NC}"
+    exit 1
 fi
-WORKER_CMD="$WORKER_CMD$SCRIPT_DIR/autonomous-worker.sh"
+
+# Build the command (pass through CLAUDE_CMD and WORKER_DIR)
+WORKER_CMD="WORKER_DIR='$WORK_DIR'"
+if [ -n "${CLAUDE_CMD:-}" ]; then
+    WORKER_CMD="$WORKER_CMD CLAUDE_CMD='$CLAUDE_CMD'"
+fi
+WORKER_CMD="$WORKER_CMD $WORKER_SCRIPT"
 if [ ${#WORKER_ARGS[@]} -gt 0 ]; then
     WORKER_CMD="$WORKER_CMD ${WORKER_ARGS[*]}"
 fi
 
 # Create detached tmux session running the worker
-tmux new-session -d -s "$SESSION_NAME" -c "$WORK_DIR" "$WORKER_CMD; echo ''; echo 'Worker finished. Press any key to close.'; read -n 1"
+# Session auto-closes when worker finishes
+tmux new-session -d -s "$SESSION_NAME" -c "$WORK_DIR" "$WORKER_CMD"
 
 echo -e "${GREEN}Worker started!${NC}"
 echo ""

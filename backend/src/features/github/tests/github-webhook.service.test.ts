@@ -4,7 +4,7 @@ import {
   GitHubWebhookService,
   type IssueWebhookPayload,
   type PingWebhookPayload,
-} from "./github-webhook.service.js";
+} from "../services/github-webhook.service.js";
 
 // Mock database
 const mockDb = {} as any;
@@ -22,13 +22,13 @@ const mockWorkItemRepository = {
 };
 
 // Mock the repository modules with proper class constructors
-vi.mock("../repositories/repository.repository.js", () => ({
+vi.mock("../../../repositories/repository.repository.js", () => ({
   RepositoryRepository: class {
     findAll = mockRepoRepository.findAll;
   },
 }));
 
-vi.mock("../repositories/work-item.repository.js", () => ({
+vi.mock("../../work-items/repositories/work-item.repository.js", () => ({
   WorkItemRepository: class {
     findAll = mockWorkItemRepository.findAll;
     create = mockWorkItemRepository.create;

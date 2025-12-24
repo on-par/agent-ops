@@ -1,11 +1,11 @@
 import { eq } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
-import type { DrizzleDatabase } from "../db/index.js";
+import type { DrizzleDatabase } from "../../../db/index.js";
 import {
   githubConnections,
   type GitHubConnection,
   type NewGitHubConnection,
-} from "../db/schema.js";
+} from "../../../db/schema.js";
 
 export class GitHubConnectionRepository {
   constructor(private db: DrizzleDatabase) {}

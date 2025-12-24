@@ -1,10 +1,10 @@
 import { Octokit } from "octokit";
 import { v4 as uuidv4 } from "uuid";
-import type { DrizzleDatabase } from "../db/index.js";
-import { RepositoryRepository } from "../repositories/repository.repository.js";
+import type { DrizzleDatabase } from "../../../db/index.js";
+import { RepositoryRepository } from "../../../repositories/repository.repository.js";
 import { GitHubConnectionRepository } from "../repositories/github-connection.repository.js";
-import { WorkItemRepository } from "../features/work-items/repositories/work-item.repository.js";
-import type { Repository, WorkItemType, WorkItemStatus } from "../db/schema.js";
+import { WorkItemRepository } from "../../work-items/repositories/work-item.repository.js";
+import type { Repository, WorkItemType, WorkItemStatus } from "../../../db/schema.js";
 
 interface GitHubIssue {
   id: number;

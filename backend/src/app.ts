@@ -7,8 +7,11 @@ import { WorkItemRepository } from "./features/work-items/repositories/work-item
 import { WorkItemService } from "./features/work-items/services/work-item.service.js";
 import { ConcurrencyLimitsService } from "./services/orchestration.service.js";
 import { workItemsHandler } from "./features/work-items/handler/work-items.handler.js";
-import { githubAuthRoutes } from "./routes/github-auth.routes.js";
-import { githubWebhookRoutes } from "./routes/github-webhook.routes.js";
+import { githubAuthHandler } from "./features/github/handler/github-auth.handler.js";
+import { githubWebhookHandler } from "./features/github/handler/github-webhook.handler.js";
+import { GitHubService } from "./features/github/services/github.service.js";
+import { GitHubWebhookService } from "./features/github/services/github-webhook.service.js";
+import { GitHubConnectionRepository } from "./features/github/repositories/github-connection.repository.js";
 import { repositoriesRoutes } from "./routes/repositories.routes.js";
 import { pullRequestsRoutes } from "./routes/pull-requests.routes.js";
 import { agentRuntimeRoutes } from "./features/agent-runtime/handler/agent-runtime.handler.js";
@@ -58,18 +61,24 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
       service: workItemService,
     });
 
+    // GitHub feature handlers
+    const githubService = new GitHubService(config);
+    const connectionRepo = new GitHubConnectionRepository(db);
+    const webhookService = new GitHubWebhookService(db, config.githubWebhookSecret);
+
     // GitHub OAuth routes
-    await app.register(githubAuthRoutes, {
+    await app.register(githubAuthHandler, {
       prefix: "/api/auth/github",
       config,
-      db,
+      githubService,
+      connectionRepo,
     });
 
     // GitHub webhook routes
-    await app.register(githubWebhookRoutes, {
+    await app.register(githubWebhookHandler, {
       prefix: "/api/webhooks/github",
       config,
-      db,
+      webhookService,
     });
 
     // Repository management routes

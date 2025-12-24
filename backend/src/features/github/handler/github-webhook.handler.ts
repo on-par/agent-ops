@@ -1,15 +1,14 @@
 import type { FastifyInstance, FastifyPluginOptions, FastifyRequest } from "fastify";
-import {
+import type {
   GitHubWebhookService,
-  type WebhookEventType,
-  type WebhookPayload,
+  WebhookEventType,
+  WebhookPayload,
 } from "../services/github-webhook.service.js";
-import type { Config } from "../config.js";
-import type { DrizzleDatabase } from "../db/index.js";
+import type { Config } from "../../../config.js";
 
-interface GitHubWebhookRoutesOptions extends FastifyPluginOptions {
+export interface GitHubWebhookHandlerOptions extends FastifyPluginOptions {
   config: Config;
-  db: DrizzleDatabase;
+  webhookService: GitHubWebhookService;
 }
 
 // Custom request type for raw body access
@@ -17,12 +16,15 @@ interface WebhookRequest extends FastifyRequest {
   rawBody?: string;
 }
 
-export async function githubWebhookRoutes(
+/**
+ * GitHub Webhook Handler
+ * Processes incoming GitHub webhook events
+ */
+export async function githubWebhookHandler(
   app: FastifyInstance,
-  options: GitHubWebhookRoutesOptions
+  options: GitHubWebhookHandlerOptions
 ): Promise<void> {
-  const { config, db } = options;
-  const webhookService = new GitHubWebhookService(db, config.githubWebhookSecret);
+  const { config, webhookService } = options;
 
   // Add raw body parser for signature verification
   app.addContentTypeParser(
