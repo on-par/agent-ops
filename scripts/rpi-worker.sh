@@ -9,13 +9,16 @@
 #   CLAUDE_CMD=ccymcp ./scripts/rpi-worker.sh  # Use MCP-enabled claude
 #
 # Options:
-#   --dry-run           Show tasks without executing
-#   --max N             Maximum number of tasks to run
-#   --timeout M         Timeout per phase in minutes (default: 30)
-#   --model M           Model for phases: sonnet, opus (default: sonnet)
-#   --validator-model M Model for FAR/FACTS validation (default: sonnet)
-#   --max-retries N     Max validation retries per phase (default: 2)
-#   --help              Show this help
+#   --dry-run              Show tasks without executing
+#   --max N                Maximum number of tasks to run
+#   --timeout M            Timeout per phase in minutes (default: 30)
+#   --model M              Model for ALL phases: sonnet, opus, haiku
+#   --research-model M     Model for research phase (default: sonnet)
+#   --plan-model M         Model for plan phase (default: sonnet)
+#   --implement-model M    Model for implement phase (default: haiku)
+#   --validator-model M    Model for FAR/FACTS validation (default: sonnet)
+#   --max-retries N        Max validation retries per phase (default: 2)
+#   --help                 Show this help
 #
 # Environment:
 #   CLAUDE_CMD    Claude command with flags (default: claude)
@@ -47,12 +50,14 @@ NC='\033[0m'
 PATTERN=""
 DRY_RUN=false
 TIMEOUT_MINS=$DEFAULT_TIMEOUT
-MODEL_CHOICE="sonnet"
-VALIDATOR_MODEL="sonnet"
+RESEARCH_MODEL="sonnet"
+PLAN_MODEL="sonnet"
+IMPLEMENT_MODEL="haiku"
+VALIDATOR_MODEL="haiku"
 MAX_VALIDATION_RETRIES=2
 
 show_help() {
-    head -20 "$0" | tail -18 | sed 's/^# //' | sed 's/^#//'
+    head -24 "$0" | tail -22 | sed 's/^# //' | sed 's/^#//'
     exit 0
 }
 
@@ -71,7 +76,22 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --model)
-            MODEL_CHOICE="$2"
+            # Set all phase models at once
+            RESEARCH_MODEL="$2"
+            PLAN_MODEL="$2"
+            IMPLEMENT_MODEL="$2"
+            shift 2
+            ;;
+        --research-model)
+            RESEARCH_MODEL="$2"
+            shift 2
+            ;;
+        --plan-model)
+            PLAN_MODEL="$2"
+            shift 2
+            ;;
+        --implement-model)
+            IMPLEMENT_MODEL="$2"
             shift 2
             ;;
         --validator-model)
@@ -283,10 +303,12 @@ get_task_title() {
 # Phase 1: Research
 run_research_phase() {
     local task_id="$1"
+    local task_title="${2:-}"
     local log_file="$LOG_DIR/${task_id}-research-$(date +%Y%m%d-%H%M%S).log"
     local output_file="$TMP_DIR/${task_id}-research.md"
 
     log "${CYAN}[RESEARCH]${NC} Starting research for ${YELLOW}$task_id${NC}"
+    [ -n "$task_title" ] && log "  ${CYAN}$task_title${NC}"
 
     # Get bead details
     local bead_info
@@ -370,7 +392,7 @@ This research will be stored in the bead and used for the planning phase."
     output=$(run_claude_with_limit \
         "research:$task_id" \
         "$prompt" \
-        "$MODEL_CHOICE" \
+        "$RESEARCH_MODEL" \
         "Read,Glob,Grep,Task,TodoWrite,WebSearch,WebFetch" \
         "$TIMEOUT_MINS" \
         "$log_file") || exit_code=$?
@@ -399,11 +421,13 @@ This research will be stored in the bead and used for the planning phase."
 # Phase 2: Plan
 run_plan_phase() {
     local task_id="$1"
+    local task_title="${2:-}"
     local log_file="$LOG_DIR/${task_id}-plan-$(date +%Y%m%d-%H%M%S).log"
     local output_file="$TMP_DIR/${task_id}-plan.md"
     local research_file="$TMP_DIR/${task_id}-research.md"
 
     log "${MAGENTA}[PLAN]${NC} Creating plan for ${YELLOW}$task_id${NC}"
+    [ -n "$task_title" ] && log "  ${CYAN}$task_title${NC}"
 
     # Get bead details including any research comments
     local bead_info
@@ -491,7 +515,7 @@ This plan will be stored in the bead and used for implementation."
     output=$(run_claude_with_limit \
         "plan:$task_id" \
         "$prompt" \
-        "$MODEL_CHOICE" \
+        "$PLAN_MODEL" \
         "Read,Glob,Grep,Task,TodoWrite" \
         "$TIMEOUT_MINS" \
         "$log_file") || exit_code=$?
@@ -520,10 +544,12 @@ This plan will be stored in the bead and used for implementation."
 # Phase 3: Implement
 run_implement_phase() {
     local task_id="$1"
+    local task_title="${2:-}"
     local log_file="$LOG_DIR/${task_id}-implement-$(date +%Y%m%d-%H%M%S).log"
     local plan_file="$TMP_DIR/${task_id}-plan.md"
 
     log "${BLUE}[IMPLEMENT]${NC} Implementing ${YELLOW}$task_id${NC}"
+    [ -n "$task_title" ] && log "  ${CYAN}$task_title${NC}"
 
     # Get full bead context
     local bead_info
@@ -541,7 +567,7 @@ run_implement_phase() {
     local design_content
     design_content=$(bd show "$task_id" --json 2>/dev/null | grep -o '"design":"[^"]*"' | sed 's/"design":"//; s/"$//' || echo "")
 
-    local prompt="You are implementing issue $task_id.
+    local prompt="You are autonomously implementing issue $task_id.
 
 ISSUE DETAILS:
 $bead_info
@@ -554,7 +580,7 @@ $plan_content
 
 $design_content
 
-# Implementation Instructions
+# Implementation Steps
 
 1. Read and understand the plan above.
 
@@ -576,13 +602,22 @@ $design_content
 
 5. When ALL tests/build/lint pass:
    - Commit changes with descriptive message
-   - Push to remote: git push
+   - Run: git push (IMPORTANT - always push your work)
+   - Work is NOT complete until git push succeeds
 
-6. CLEANUP (CRITICAL):
+6. Close the issue: bd close $task_id
+
+7. CLEANUP (CRITICAL):
    - Kill any processes you started (dev servers, watchers, etc.)
    - Use 'pkill -f' or 'kill' to terminate processes
    - Check with 'ps aux | grep node' before finishing
    - Do NOT leave orphaned processes running
+
+GUIDELINES:
+- Follow existing code patterns in the codebase
+- Don't over-engineer - implement what's specified
+- If blocked or uncertain, document why and move on
+- Keep commits focused and atomic
 
 Begin implementation now."
 
@@ -596,7 +631,7 @@ Begin implementation now."
     output=$(run_claude_with_limit \
         "implement:$task_id" \
         "$prompt" \
-        "$MODEL_CHOICE" \
+        "$IMPLEMENT_MODEL" \
         "Read,Write,Edit,Bash,Glob,Grep,Task,TodoWrite" \
         "$impl_timeout" \
         "$log_file") || exit_code=$?
@@ -892,13 +927,74 @@ VALIDATION_FAILED
     fi
 }
 
+# Check if research already exists in bead
+has_research() {
+    local task_id="$1"
+    # Check for research markers in comments
+    if bd comments "$task_id" 2>/dev/null | grep -qE "Problem Overview|Proposed Solution|Codebase Analysis"; then
+        return 0
+    fi
+    return 1
+}
+
+# Check if plan already exists in bead
+has_plan() {
+    local task_id="$1"
+    # Check design field or plan markers in comments
+    local design
+    design=$(bd show "$task_id" --json 2>/dev/null | grep -o '"design":"[^"]*"' | sed 's/"design":"//; s/"$//' || echo "")
+    if [ -n "$design" ] && [ "$design" != "null" ]; then
+        return 0
+    fi
+    # Also check comments for plan markers
+    if bd comments "$task_id" 2>/dev/null | grep -qE "Implementation Phases|## Phase [0-9]"; then
+        return 0
+    fi
+    return 1
+}
+
+# Generate implementation summary
+generate_summary() {
+    local task_id="$1"
+    local task_title="$2"
+
+    # Get recent git changes
+    local changes
+    changes=$(git diff --stat HEAD~1 2>/dev/null | tail -10 || echo "No recent commits")
+
+    local files_changed
+    files_changed=$(git diff --name-only HEAD~1 2>/dev/null | head -10 || echo "")
+
+    local prompt="Summarize what was implemented in 2-3 concise sentences.
+
+Task: $task_title
+
+Files changed:
+$files_changed
+
+Stats:
+$changes
+
+Focus on what user-visible changes were made. Be brief and specific."
+
+    local summary
+    summary=$(timeout 2m $CLAUDE_CMD -p "$prompt" --model haiku 2>&1) || summary="Implementation completed."
+
+    echo "$summary"
+}
+
 # Run full RPI cycle for a task
 run_rpi_cycle() {
     local task_id="$1"
     local task_num="$2"
     local total="$3"
+    local task_title
+    task_title=$(get_task_title "$task_id")
 
-    log "${BLUE}[$task_num/$total]${NC} Starting RPI cycle for ${YELLOW}$task_id${NC}"
+    log "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    log "${BLUE}[$task_num/$total]${NC} ${YELLOW}$task_id${NC}"
+    log "  ${CYAN}$task_title${NC}"
+    log "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
     # Mark as in progress
     bd update "$task_id" --status in_progress 2>/dev/null || true
@@ -909,11 +1005,32 @@ run_rpi_cycle() {
     local facts_feedback="$TMP_DIR/${task_id}-facts-feedback.md"
 
     # ═══════════════════════════════════════════════════════════════════
+    # Resume Detection - Check what's already done
+    # ═══════════════════════════════════════════════════════════════════
+    local skip_research=false
+    local skip_plan=false
+
+    if has_research "$task_id"; then
+        skip_research=true
+        log "${GREEN}[RESUME]${NC} Research already exists, skipping to planning"
+    fi
+
+    if has_plan "$task_id"; then
+        skip_plan=true
+        log "${GREEN}[RESUME]${NC} Plan already exists, skipping to implementation"
+    fi
+
+    # ═══════════════════════════════════════════════════════════════════
     # Phase 1: Research with FAR Validation Loop
     # ═══════════════════════════════════════════════════════════════════
     local research_attempts=0
     local research_validated=false
     local phase_exit_code=0
+
+    if [ "$skip_research" = true ]; then
+        research_validated=true
+        log "${CYAN}[RESEARCH]${NC} Using existing research from bead"
+    fi
 
     while [ "$research_attempts" -le "$MAX_VALIDATION_RETRIES" ] && [ "$research_validated" = false ]; do
         ((research_attempts++))
@@ -926,7 +1043,7 @@ run_rpi_cycle() {
         fi
 
         phase_exit_code=0
-        run_research_phase "$task_id" || phase_exit_code=$?
+        run_research_phase "$task_id" "$task_title" || phase_exit_code=$?
 
         # Check for rate limit exit
         if [ $phase_exit_code -eq 2 ]; then
@@ -975,6 +1092,11 @@ run_rpi_cycle() {
     local plan_attempts=0
     local plan_validated=false
 
+    if [ "$skip_plan" = true ]; then
+        plan_validated=true
+        log "${MAGENTA}[PLAN]${NC} Using existing plan from bead"
+    fi
+
     while [ "$plan_attempts" -le "$MAX_VALIDATION_RETRIES" ] && [ "$plan_validated" = false ]; do
         ((plan_attempts++))
         log "${MAGENTA}[PLAN]${NC} Attempt $plan_attempts/$((MAX_VALIDATION_RETRIES + 1))"
@@ -985,7 +1107,7 @@ run_rpi_cycle() {
         fi
 
         phase_exit_code=0
-        run_plan_phase "$task_id" || phase_exit_code=$?
+        run_plan_phase "$task_id" "$task_title" || phase_exit_code=$?
 
         # Check for rate limit exit
         if [ $phase_exit_code -eq 2 ]; then
@@ -1031,7 +1153,7 @@ run_rpi_cycle() {
     # Phase 3: Implement (no validation loop - uses quality gates)
     # ═══════════════════════════════════════════════════════════════════
     phase_exit_code=0
-    run_implement_phase "$task_id" || phase_exit_code=$?
+    run_implement_phase "$task_id" "$task_title" || phase_exit_code=$?
 
     # Check for rate limit exit
     if [ $phase_exit_code -eq 2 ]; then
@@ -1049,8 +1171,25 @@ run_rpi_cycle() {
     # Final push
     git push 2>/dev/null || log "${YELLOW}Nothing to push${NC}"
 
-    log "${GREEN}[$task_num/$total]${NC} Completed RPI cycle for ${YELLOW}$task_id${NC}"
-    log "  Research: $research_attempts attempt(s) | Plan: $plan_attempts attempt(s)"
+    # Generate and display summary
+    log "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    log "${GREEN}[$task_num/$total]${NC} ✓ Completed: ${YELLOW}$task_id${NC}"
+    log "  ${CYAN}$task_title${NC}"
+    log ""
+    log "${GREEN}Summary:${NC}"
+    local summary
+    summary=$(generate_summary "$task_id" "$task_title" 2>/dev/null || echo "Implementation completed.")
+    # Log each line of summary with indentation
+    echo "$summary" | while IFS= read -r line; do
+        log "  $line"
+    done
+    log ""
+    local research_status="$research_attempts attempt(s)"
+    local plan_status="$plan_attempts attempt(s)"
+    [ "$skip_research" = true ] && research_status="skipped (existing)"
+    [ "$skip_plan" = true ] && plan_status="skipped (existing)"
+    log "  ${BLUE}Phases:${NC} Research: $research_status | Plan: $plan_status"
+    log "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
     # Cleanup temp files
     rm -f "$TMP_DIR/${task_id}-"*.md 2>/dev/null || true
@@ -1067,7 +1206,8 @@ main() {
     cd "$WORK_DIR"
 
     log "${BLUE}=== RPI Worker Started ===${NC}"
-    log "Model: $MODEL_CHOICE | Validator: $VALIDATOR_MODEL | Timeout: ${TIMEOUT_MINS}m | Max retries: $MAX_VALIDATION_RETRIES"
+    log "Models: research=$RESEARCH_MODEL, plan=$PLAN_MODEL, implement=$IMPLEMENT_MODEL | Validator: $VALIDATOR_MODEL"
+    log "Timeout: ${TIMEOUT_MINS}m | Max retries: $MAX_VALIDATION_RETRIES"
     [ -n "$PATTERN" ] && log "Filter pattern: $PATTERN"
 
     # Get task list
@@ -1096,13 +1236,23 @@ main() {
 
     # Dry run
     if [ "$DRY_RUN" = true ]; then
-        log "${YELLOW}DRY RUN - would process:${NC}"
+        log "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        log "${YELLOW}DRY RUN${NC} - would process the following tasks:"
+        log "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         for i in "${!task_array[@]}"; do
             [ "$MAX_TASKS" -gt 0 ] && [ "$i" -ge "$MAX_TASKS" ] && break
             local task="${task_array[$i]}"
             local title=$(get_task_title "$task")
-            echo "  $((i+1)). $task: $title"
+            local has_r="" has_p=""
+            has_research "$task" && has_r="${GREEN}R${NC}" || has_r="${RED}R${NC}"
+            has_plan "$task" && has_p="${GREEN}P${NC}" || has_p="${RED}P${NC}"
+            echo -e "  $((i+1)). ${YELLOW}$task${NC} [$has_r$has_p]"
+            echo -e "     ${CYAN}$title${NC}"
         done
+        log ""
+        log "Legend: ${GREEN}R${NC}=research exists, ${RED}R${NC}=needs research"
+        log "        ${GREEN}P${NC}=plan exists, ${RED}P${NC}=needs planning"
+        log "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         exit 0
     fi
 
