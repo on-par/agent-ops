@@ -30,6 +30,8 @@ import { WorkerPoolService } from "./features/workers/services/worker-pool.servi
 import { templatesHandler } from "./features/templates/handler/templates.handler.js";
 import { TemplateRepository } from "./features/templates/repositories/template.repository.js";
 import { TemplateRegistryService } from "./features/templates/services/template-registry.service.js";
+import { metricsHandler } from "./features/metrics/handler/metrics.handler.js";
+import { tracesHandler } from "./features/metrics/handler/traces.handler.js";
 
 const HEALTH_STATUS_OK = "ok";
 
@@ -187,6 +189,18 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
     await app.register(workersHandler, {
       prefix: "/api/workers",
       workerPoolService,
+    });
+
+    // Metrics routes
+    await app.register(metricsHandler, {
+      prefix: "/api/metrics",
+      db,
+    });
+
+    // Traces routes (separate from metrics)
+    await app.register(tracesHandler, {
+      prefix: "/api/traces",
+      db,
     });
   }
 
