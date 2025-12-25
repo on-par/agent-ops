@@ -119,6 +119,13 @@ export const apiClient = {
   },
 
   /**
+   * PUT request
+   */
+  put<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
+    return axiosInstance.put<T>(url, data, config).then((response) => response.data);
+  },
+
+  /**
    * DELETE request
    */
   delete<T = void>(url: string, config?: AxiosRequestConfig): Promise<T> {
