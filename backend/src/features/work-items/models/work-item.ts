@@ -80,6 +80,14 @@ export const WorkItemSchema = z.object({
     "Current status in the workflow"
   ),
 
+  // GitHub integration (optional - for synced issues and PRs)
+  repositoryId: z.string().optional().describe("Repository ID if synced from GitHub"),
+  githubIssueId: z.number().int().optional().describe("GitHub issue ID"),
+  githubIssueNumber: z.number().int().optional().describe("GitHub issue number"),
+  githubIssueUrl: z.string().url().optional().describe("GitHub issue URL"),
+  githubPrNumber: z.number().int().optional().describe("GitHub PR number"),
+  githubPrUrl: z.string().url().optional().describe("GitHub PR URL"),
+
   // Content
   description: z
     .string()

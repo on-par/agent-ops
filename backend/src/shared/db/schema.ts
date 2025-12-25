@@ -66,6 +66,16 @@ export const agentExecutionStatuses = [
 ] as const;
 export type AgentExecutionStatus = (typeof agentExecutionStatuses)[number];
 
+// Container statuses
+export const containerStatuses = [
+  "creating",
+  "running",
+  "stopped",
+  "error",
+  "removing",
+] as const;
+export type ContainerStatus = (typeof containerStatuses)[number];
+
 // Agent execution output type for JSON column
 export interface AgentExecutionOutput {
   summary?: string;
@@ -88,6 +98,10 @@ export const workItems = sqliteTable("work_items", {
   githubIssueId: integer("github_issue_id"),
   githubIssueNumber: integer("github_issue_number"),
   githubIssueUrl: text("github_issue_url"),
+
+  // GitHub PR tracking (for agent-created PRs)
+  githubPrNumber: integer("github_pr_number"),
+  githubPrUrl: text("github_pr_url"),
 
   // Content
   description: text("description").notNull().default(""),
@@ -243,6 +257,21 @@ export const agentExecutions = sqliteTable("agent_executions", {
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 
+// Containers table for Docker container management
+export const containers = sqliteTable("containers", {
+  id: text("id").primaryKey(),
+  containerId: text("container_id").notNull().unique(),
+  workspaceId: text("workspace_id").references(() => workspaces.id),
+  workerId: text("worker_id").references(() => workers.id),
+  executionId: text("execution_id").references(() => agentExecutions.id),
+  image: text("image").notNull(),
+  status: text("status").notNull().$type<ContainerStatus>().default("creating"),
+  name: text("name").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  startedAt: integer("started_at", { mode: "timestamp_ms" }),
+  stoppedAt: integer("stopped_at", { mode: "timestamp_ms" }),
+});
+
 // Traces table for observability
 export const traces = sqliteTable("traces", {
   id: text("id").primaryKey(),
@@ -356,3 +385,6 @@ export type NewWorkspace = typeof workspaces.$inferInsert;
 
 export type AgentExecution = typeof agentExecutions.$inferSelect;
 export type NewAgentExecution = typeof agentExecutions.$inferInsert;
+
+export type Container = typeof containers.$inferSelect;
+export type NewContainer = typeof containers.$inferInsert;
