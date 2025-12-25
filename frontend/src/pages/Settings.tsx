@@ -15,6 +15,7 @@ import {
   Zap,
   Database,
 } from "lucide-react";
+import { ProviderSettings } from "../components/settings/ProviderSettings";
 
 // Settings sections
 const settingsSections = [
@@ -59,6 +60,13 @@ const settingsSections = [
     description: "Connect external services",
     icon: Globe,
     color: "var(--blue)",
+  },
+  {
+    id: "llm-providers",
+    title: "LLM Providers",
+    description: "Configure AI model connections",
+    icon: Bot,
+    color: "var(--violet)",
   },
 ];
 
@@ -446,6 +454,14 @@ export function Settings() {
                       </button>
                     </div>
                   ))}
+                </div>
+              </SettingSection>
+            )}
+
+            {activeSection === "llm-providers" && (
+              <SettingSection title="LLM Provider Configuration">
+                <div className="py-4">
+                  <ProviderSettings />
                 </div>
               </SettingSection>
             )}

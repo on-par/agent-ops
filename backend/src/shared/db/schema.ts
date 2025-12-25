@@ -361,6 +361,18 @@ export const repositories = sqliteTable("repositories", {
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });
 
+// Provider Settings table for LLM provider configuration
+export const providerSettings = sqliteTable("provider_settings", {
+  id: text("id").primaryKey(),
+  providerType: text("provider_type").notNull(),
+  baseUrl: text("base_url"),
+  apiKeyEncrypted: text("api_key_encrypted"),
+  model: text("model").notNull(),
+  isDefault: integer("is_default", { mode: "boolean" }).notNull().default(false),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+});
+
 // Type exports for use in repositories
 export type WorkItem = typeof workItems.$inferSelect;
 export type NewWorkItem = typeof workItems.$inferInsert;
@@ -388,3 +400,6 @@ export type NewAgentExecution = typeof agentExecutions.$inferInsert;
 
 export type Container = typeof containers.$inferSelect;
 export type NewContainer = typeof containers.$inferInsert;
+
+export type ProviderSettingsRecord = typeof providerSettings.$inferSelect;
+export type NewProviderSettingsRecord = typeof providerSettings.$inferInsert;

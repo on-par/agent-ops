@@ -23,6 +23,7 @@ import { dashboardHandler } from "./features/dashboard/handler/dashboard.handler
 import { executionsHandler } from "./features/executions/handler/executions.handler.js";
 import { websocketHandler } from "./features/dashboard/handler/websocket.handler.js";
 import { WebSocketHubService } from "./shared/websocket/websocket-hub.service.js";
+import { providerSettingsHandler } from "./features/llm-providers/handler/provider-settings.handler.js";
 
 const HEALTH_STATUS_OK = "ok";
 
@@ -157,6 +158,12 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
     // Execution logs routes
     await app.register(executionsHandler, {
       prefix: "/api/executions",
+      db,
+    });
+
+    // LLM Provider settings routes
+    await app.register(providerSettingsHandler, {
+      prefix: "/api/provider-settings",
       db,
     });
   }
