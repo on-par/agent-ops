@@ -56,6 +56,8 @@ describe("AgentExecutionRepository", () => {
         github_issue_id INTEGER,
         github_issue_number INTEGER,
         github_issue_url TEXT,
+        github_pr_number INTEGER,
+        github_pr_url TEXT,
         description TEXT NOT NULL DEFAULT '',
         success_criteria TEXT NOT NULL DEFAULT '[]',
         linked_files TEXT NOT NULL DEFAULT '[]',
@@ -560,6 +562,100 @@ describe("AgentExecutionRepository", () => {
       expect(updated.tokensUsed).toBe(500);
       expect(updated.costUsd).toBeCloseTo(0.08, 2);
       expect(updated.toolCallsCount).toBe(12);
+    });
+  });
+
+  describe("findRecent", () => {
+    it("should return most recent executions ordered by createdAt desc", async () => {
+      // Arrange: Create 15 executions with different createdAt timestamps
+      const now = Date.now();
+      const executions: NewAgentExecution[] = [];
+
+      for (let i = 0; i < 15; i++) {
+        const createdAt = new Date(now - i * 60000); // Each 1 minute apart
+        executions.push({
+          id: uuidv4(),
+          workerId: testWorkerId,
+          workItemId: testWorkItemId,
+          workspaceId: testWorkspaceId,
+          templateId: testTemplateId,
+          status: i % 3 === 0 ? "success" : i % 3 === 1 ? "error" : "running",
+          createdAt,
+        });
+      }
+
+      // Insert in random order to ensure ordering is by createdAt, not insertion order
+      for (const execution of executions) {
+        await repository.create(execution);
+      }
+
+      // Act: Call findRecent(10)
+      const recent = await repository.findRecent(10);
+
+      // Assert: Returns exactly 10 items, ordered by createdAt descending
+      expect(recent).toHaveLength(10);
+
+      // Verify ordering - each item should be more recent than the next
+      for (let i = 0; i < recent.length - 1; i++) {
+        const current = recent[i];
+        const next = recent[i + 1];
+        expect(current?.createdAt.getTime()).toBeGreaterThanOrEqual(next?.createdAt.getTime() ?? 0);
+      }
+
+      // Most recent should be first
+      expect(recent[0]?.createdAt.getTime()).toBeGreaterThanOrEqual(now - 100); // Allow small variance
+    });
+
+    it("should return empty array when no executions exist", async () => {
+      // Act
+      const recent = await repository.findRecent(10);
+
+      // Assert
+      expect(recent).toHaveLength(0);
+    });
+
+    it("should return fewer items if total count is less than limit", async () => {
+      // Arrange: Create only 5 executions
+      for (let i = 0; i < 5; i++) {
+        const execution: NewAgentExecution = {
+          id: uuidv4(),
+          workerId: testWorkerId,
+          workItemId: testWorkItemId,
+          workspaceId: testWorkspaceId,
+          templateId: testTemplateId,
+          status: "success",
+          createdAt: new Date(Date.now() - i * 60000),
+        };
+        await repository.create(execution);
+      }
+
+      // Act: Request 10 but only 5 exist
+      const recent = await repository.findRecent(10);
+
+      // Assert
+      expect(recent).toHaveLength(5);
+    });
+
+    it("should respect the limit parameter", async () => {
+      // Arrange: Create 20 executions
+      for (let i = 0; i < 20; i++) {
+        const execution: NewAgentExecution = {
+          id: uuidv4(),
+          workerId: testWorkerId,
+          workItemId: testWorkItemId,
+          workspaceId: testWorkspaceId,
+          templateId: testTemplateId,
+          status: "success",
+          createdAt: new Date(Date.now() - i * 60000),
+        };
+        await repository.create(execution);
+      }
+
+      // Act: Request only 3
+      const recent = await repository.findRecent(3);
+
+      // Assert
+      expect(recent).toHaveLength(3);
     });
   });
 });

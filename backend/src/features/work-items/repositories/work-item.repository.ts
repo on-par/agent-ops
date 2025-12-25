@@ -353,4 +353,26 @@ export class WorkItemRepository {
       );
     }
   }
+
+  /**
+   * Find most recent work items with given status
+   * @param status - Work item status to filter by
+   * @param limit - Maximum number of items to return (default: 5)
+   * @returns Array of recent work items ordered by completedAt descending
+   */
+  async findRecentByStatus(status: WorkItemStatus, limit: number = 5): Promise<WorkItem[]> {
+    try {
+      const { desc } = await import("drizzle-orm");
+      return await this.db
+        .select()
+        .from(workItems)
+        .where(eq(workItems.status, status))
+        .orderBy(desc(workItems.completedAt))
+        .limit(limit);
+    } catch (error) {
+      throw new Error(
+        `Failed to find recent work items by status: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
 }
