@@ -725,6 +725,73 @@ describe("WorkerPoolService", () => {
     });
   });
 
+  describe("inject", () => {
+    it("should inject message into existing worker", async () => {
+      const worker = await service.spawn(testTemplateId, crypto.randomUUID());
+
+      const result = await service.inject(worker.id, "test command");
+
+      expect(result.success).toBe(true);
+      expect(result.workerId).toBe(worker.id);
+      expect(result.message).toBe("Message injected successfully");
+    });
+
+    it("should accept message with type parameter", async () => {
+      const worker = await service.spawn(testTemplateId, crypto.randomUUID());
+
+      const result = await service.inject(
+        worker.id,
+        "test command",
+        "command"
+      );
+
+      expect(result.success).toBe(true);
+    });
+
+    it("should accept message with payload parameter", async () => {
+      const worker = await service.spawn(testTemplateId, crypto.randomUUID());
+
+      const result = await service.inject(worker.id, "test command", "data", {
+        key: "value",
+      });
+
+      expect(result.success).toBe(true);
+    });
+
+    it("should work with different injection types", async () => {
+      const worker = await service.spawn(testTemplateId, crypto.randomUUID());
+
+      const types = ["command", "data", "config"];
+      for (const type of types) {
+        const result = await service.inject(worker.id, "test", type);
+        expect(result.success).toBe(true);
+      }
+    });
+
+    it("should throw error when worker not found", async () => {
+      await expect(
+        service.inject("non-existent-id", "message")
+      ).rejects.toThrow("Worker with id non-existent-id not found");
+    });
+
+    it("should throw error when injecting into terminated worker", async () => {
+      const worker = await service.spawn(testTemplateId, crypto.randomUUID());
+      await service.terminate(worker.id);
+
+      await expect(
+        service.inject(worker.id, "message")
+      ).rejects.toThrow(`Cannot inject into terminated worker ${worker.id}`);
+    });
+
+    it("should allow injecting into idle worker", async () => {
+      const worker = await service.spawn(testTemplateId, crypto.randomUUID());
+
+      const result = await service.inject(worker.id, "test command");
+
+      expect(result.success).toBe(true);
+    });
+  });
+
   describe("configuration", () => {
     it("should initialize with default max workers", () => {
       const defaultService = new WorkerPoolService(repository);

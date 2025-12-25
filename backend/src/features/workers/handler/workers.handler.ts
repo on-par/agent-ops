@@ -7,6 +7,7 @@ import {
   UpdateMetricsSchema,
   ReportErrorSchema,
   TemplateIdQuerySchema,
+  InjectSchema,
 } from "../schemas/worker.schemas.js";
 
 export interface WorkersHandlerOptions extends FastifyPluginOptions {
@@ -52,11 +53,12 @@ export async function workersHandler(
         return;
       }
 
-      // Handle state constraint errors (paused/working/idle)
+      // Handle state constraint errors (paused/working/idle/terminated)
       if (
         message.includes("not in working status") ||
         message.includes("not in paused status") ||
-        message.includes("not idle")
+        message.includes("not idle") ||
+        message.includes("terminated")
       ) {
         reply.status(409).send({
           error: message,
@@ -157,6 +159,18 @@ export async function workersHandler(
       const { id } = request.params as { id: string };
       const worker = await workerPoolService.resume(id);
       return worker;
+    } catch (error) {
+      handleError(error, reply);
+    }
+  });
+
+  // POST /:id/inject - Inject message into worker
+  app.post("/:id/inject", async (request, reply) => {
+    try {
+      const { id } = request.params as { id: string };
+      const { message, type, payload } = InjectSchema.parse(request.body);
+      const result = await workerPoolService.inject(id, message, type, payload);
+      return result;
     } catch (error) {
       handleError(error, reply);
     }

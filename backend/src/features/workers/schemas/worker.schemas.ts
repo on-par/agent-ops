@@ -74,3 +74,13 @@ export const TemplateIdQuerySchema = z.object({
   templateId: z.string().min(1, "Template ID is required").optional(),
 });
 export type TemplateIdQuery = z.infer<typeof TemplateIdQuerySchema>;
+
+/**
+ * Schema for injecting a message into a worker
+ */
+export const InjectSchema = z.object({
+  message: z.string().min(1, "Injection message is required"),
+  type: z.enum(["command", "data", "config"]).optional().default("command"),
+  payload: z.record(z.string(), z.any()).optional(),
+});
+export type InjectRequest = z.infer<typeof InjectSchema>;
