@@ -3,7 +3,7 @@
  * These types define the shape of client-side state managed by Zustand
  */
 
-import type { WorkItemStatus, WorkerStatus } from './dashboard';
+import type { WorkItemStatus, WorkItemType, WorkItemPriority, WorkerStatus } from './dashboard';
 
 /**
  * Kanban page UI state
@@ -53,6 +53,37 @@ export interface DashboardUIState {
   // Actions
   setTimePeriod: (period: 'today' | 'week' | 'month' | 'year') => void;
   setAutoRefresh: (enabled: boolean) => void;
+}
+
+/**
+ * Work Items page UI state
+ *
+ * NOTE: This interface defines UI-only state. Server state (CRUD operations,
+ * status transitions, optimistic updates) is managed by React Query hooks
+ * in frontend/src/hooks/use-work-items.ts
+ */
+export interface WorkItemsUIState {
+  // Filters
+  statusFilter: WorkItemStatus | 'all';
+  typeFilter: WorkItemType | 'all';
+  priorityFilter: WorkItemPriority | 'all';
+  searchQuery: string;
+
+  // Selection
+  selectedWorkItemId: string | null;
+
+  // Modals
+  isCreateModalOpen: boolean;
+  isEditModalOpen: boolean;
+
+  // Actions
+  setStatusFilter: (status: WorkItemStatus | 'all') => void;
+  setTypeFilter: (type: WorkItemType | 'all') => void;
+  setPriorityFilter: (priority: WorkItemPriority | 'all') => void;
+  setSearchQuery: (query: string) => void;
+  setSelectedWorkItem: (id: string | null) => void;
+  setCreateModalOpen: (open: boolean) => void;
+  setEditModalOpen: (open: boolean) => void;
 }
 
 /**

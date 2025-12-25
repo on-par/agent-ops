@@ -9,6 +9,16 @@
 export type WorkItemStatus = 'backlog' | 'ready' | 'in_progress' | 'review' | 'done';
 
 /**
+ * Work item type values
+ */
+export type WorkItemType = 'task' | 'bug' | 'feature' | 'epic';
+
+/**
+ * Work item priority values
+ */
+export type WorkItemPriority = 'low' | 'medium' | 'high' | 'critical';
+
+/**
  * Repository sync status values
  */
 export type RepoSyncStatus = 'pending' | 'syncing' | 'synced' | 'error';
