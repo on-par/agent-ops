@@ -17,6 +17,8 @@ import { pullRequestsHandler } from "./features/pull-requests/handler/pull-reque
 import { agentRuntimeRoutes } from "./features/agent-runtime/handler/agent-runtime.handler.js";
 import { concurrencyHandler } from "./features/concurrency/handler/concurrency.handler.js";
 import { containerRoutes } from "./features/containers/handler/container.handler.js";
+import { containerLogsRoutes } from "./features/containers/handler/container-logs.handler.js";
+import { containerTerminalHandler } from "./features/containers/handler/container-terminal.handler.js";
 import { dashboardHandler } from "./features/dashboard/handler/dashboard.handler.js";
 import { executionsHandler } from "./features/executions/handler/executions.handler.js";
 import { websocketHandler } from "./features/dashboard/handler/websocket.handler.js";
@@ -127,6 +129,20 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
 
     // Container management routes
     await app.register(containerRoutes, {
+      prefix: "/api/containers",
+      db,
+      config,
+    });
+
+    // Container logs SSE routes
+    await app.register(containerLogsRoutes, {
+      prefix: "/api/containers",
+      db,
+      config,
+    });
+
+    // Container terminal WebSocket routes
+    await app.register(containerTerminalHandler, {
       prefix: "/api/containers",
       db,
       config,
