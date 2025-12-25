@@ -1,4 +1,3 @@
-import { useState } from "react";
 import {
   FileText,
   Plus,
@@ -15,6 +14,7 @@ import {
   Shield,
   GitBranch,
 } from "lucide-react";
+import { useTemplatesUIStore } from "../stores/templates.store";
 
 // Mock templates data
 const mockTemplates = [
@@ -177,7 +177,9 @@ function TemplateCard({ template }: { template: (typeof mockTemplates)[0] }) {
 }
 
 export function Templates() {
-  const [searchQuery, setSearchQuery] = useState("");
+  const searchQuery = useTemplatesUIStore((state) => state.searchQuery);
+  const setSearchQuery = useTemplatesUIStore((state) => state.setSearchQuery);
+  const setCreateModalOpen = useTemplatesUIStore((state) => state.setCreateModalOpen);
 
   const filteredTemplates = mockTemplates.filter((template) =>
     template.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -207,7 +209,7 @@ export function Templates() {
             </div>
           </div>
 
-          <button className="btn-primary-gradient flex items-center gap-2 px-5 py-2.5 text-[var(--bg-deep)] text-sm font-semibold rounded-xl">
+          <button className="btn-primary-gradient flex items-center gap-2 px-5 py-2.5 text-[var(--bg-deep)] text-sm font-semibold rounded-xl" onClick={() => setCreateModalOpen(true)}>
             <Plus className="w-[18px] h-[18px]" />
             New Template
           </button>
@@ -268,7 +270,7 @@ export function Templates() {
             className="animate-slide-up"
             style={{ animationDelay: `${filteredTemplates.length * 50}ms` }}
           >
-            <button className="w-full h-full min-h-[300px] rounded-2xl border-2 border-dashed border-white/[0.08] hover:border-[var(--cyan-glow)]/30 bg-[var(--bg-card)]/50 flex flex-col items-center justify-center gap-3 text-[var(--text-muted)] hover:text-[var(--cyan-glow)] transition-all">
+            <button className="w-full h-full min-h-[300px] rounded-2xl border-2 border-dashed border-white/[0.08] hover:border-[var(--cyan-glow)]/30 bg-[var(--bg-card)]/50 flex flex-col items-center justify-center gap-3 text-[var(--text-muted)] hover:text-[var(--cyan-glow)] transition-all" onClick={() => setCreateModalOpen(true)}>
               <div className="w-12 h-12 rounded-xl bg-[var(--bg-elevated)] flex items-center justify-center">
                 <Plus className="w-6 h-6" />
               </div>

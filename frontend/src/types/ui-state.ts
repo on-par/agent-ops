@@ -92,6 +92,32 @@ export interface WorkItemsUIState {
 }
 
 /**
+ * Templates page UI state
+ *
+ * NOTE: This interface defines UI-only state. Server state (CRUD operations)
+ * is managed by React Query hooks in frontend/src/hooks/use-templates.ts
+ */
+export interface TemplatesUIState {
+  // Search
+  searchQuery: string;
+
+  // Selection
+  selectedTemplateId: string | null;
+
+  // Modals
+  isCreateModalOpen: boolean;
+  isEditModalOpen: boolean;
+  isCloneModalOpen: boolean;
+
+  // Actions
+  setSearchQuery: (query: string) => void;
+  setSelectedTemplate: (id: string | null) => void;
+  setCreateModalOpen: (open: boolean) => void;
+  setEditModalOpen: (open: boolean) => void;
+  setCloneModalOpen: (open: boolean) => void;
+}
+
+/**
  * Global UI state for non-page-specific UI concerns
  */
 export interface GlobalUIState {
