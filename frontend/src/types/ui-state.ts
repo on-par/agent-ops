@@ -28,9 +28,9 @@ export interface KanbanUIState {
 }
 
 /**
- * Agents page UI state
+ * Workers page UI state
  */
-export interface AgentsUIState {
+export interface WorkersUIState {
   statusFilter: WorkerStatus | 'all';
   searchQuery: string;
   selectedWorkerId: string | null;
@@ -42,6 +42,11 @@ export interface AgentsUIState {
   setSelectedWorker: (id: string | null) => void;
   setSpawnModalOpen: (open: boolean) => void;
 }
+
+/**
+ * @deprecated Use WorkersUIState instead. Kept for backward compatibility.
+ */
+export type AgentsUIState = WorkersUIState;
 
 /**
  * Dashboard page UI state

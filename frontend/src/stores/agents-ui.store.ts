@@ -1,21 +1,10 @@
 /**
- * Zustand store for Agents page UI state
- * Manages filters, selections, and worker state
+ * @deprecated Use workers.store.ts instead. This file is kept for backward compatibility.
  */
 
-import { create } from 'zustand';
-import type { AgentsUIState } from '../types/ui-state';
+import { useWorkersUIStore } from './workers.store';
 
-export const useAgentsUIStore = create<AgentsUIState>((set) => ({
-  // Initial state
-  statusFilter: 'all',
-  searchQuery: '',
-  selectedWorkerId: null,
-  isSpawnModalOpen: false,
-
-  // Actions
-  setStatusFilter: (status) => set({ statusFilter: status }),
-  setSearchQuery: (query) => set({ searchQuery: query }),
-  setSelectedWorker: (id) => set({ selectedWorkerId: id }),
-  setSpawnModalOpen: (open) => set({ isSpawnModalOpen: open }),
-}));
+/**
+ * @deprecated Use useWorkersUIStore instead
+ */
+export const useAgentsUIStore = useWorkersUIStore;

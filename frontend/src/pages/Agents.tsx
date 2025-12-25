@@ -1,4 +1,3 @@
-import { useState } from "react";
 import {
   Search,
   Bot,
@@ -18,6 +17,7 @@ import {
   GitBranch,
   Plus,
 } from "lucide-react";
+import { useWorkersUIStore } from "../stores/workers.store";
 
 // Mock data for agent cards
 const mockAgents = [
@@ -333,8 +333,10 @@ function AgentCard({ agent }: { agent: (typeof mockAgents)[0] }) {
 }
 
 export function Agents() {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const searchQuery = useWorkersUIStore((state) => state.searchQuery);
+  const statusFilter = useWorkersUIStore((state) => state.statusFilter);
+  const setSearchQuery = useWorkersUIStore((state) => state.setSearchQuery);
+  const setStatusFilter = useWorkersUIStore((state) => state.setStatusFilter);
 
   const filteredAgents = mockAgents.filter((agent) => {
     const matchesSearch = agent.name
@@ -415,10 +417,10 @@ export function Agents() {
           </div>
 
           <div className="flex items-center gap-2">
-            {["all", "active", "paused", "idle"].map((status) => (
+            {(["all", "active", "paused", "idle"] as const).map((status) => (
               <button
                 key={status}
-                onClick={() => setStatusFilter(status)}
+                onClick={() => setStatusFilter(status as any)}
                 className={`
                   px-3 py-1.5 rounded-lg font-mono text-xs uppercase tracking-wider
                   transition-all
