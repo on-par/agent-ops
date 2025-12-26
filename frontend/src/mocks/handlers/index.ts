@@ -8,6 +8,7 @@ import { API_BASE } from '../../lib/api';
 import type { WorkItem, Worker, DashboardStats } from '../../types/dashboard';
 import { containerHandlers } from './containers';
 import { executionHandlers } from './executions';
+import { githubHandlers } from './github';
 
 /**
  * Work Items handlers
@@ -754,4 +755,5 @@ export const handlers = [
   ...dashboardHandlers,
   ...containerHandlers,
   ...executionHandlers,
+  ...githubHandlers,
 ];

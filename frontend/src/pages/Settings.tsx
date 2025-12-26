@@ -14,8 +14,11 @@ import {
   Bot,
   Zap,
   Database,
+  Github,
 } from "lucide-react";
 import { ProviderSettings } from "../components/settings/ProviderSettings";
+import { GitHubConnectionManager } from "../components/settings/GitHubConnectionManager";
+import { ConnectedRepositoryList } from "../components/settings/ConnectedRepositoryList";
 
 // Settings sections
 const settingsSections = [
@@ -66,6 +69,13 @@ const settingsSections = [
     title: "LLM Providers",
     description: "Configure AI model connections",
     icon: Bot,
+    color: "var(--violet)",
+  },
+  {
+    id: "github",
+    title: "GitHub Integration",
+    description: "Connect repositories and sync issues",
+    icon: Github,
     color: "var(--violet)",
   },
 ];
@@ -464,6 +474,22 @@ export function Settings() {
                   <ProviderSettings />
                 </div>
               </SettingSection>
+            )}
+
+            {activeSection === "github" && (
+              <div className="space-y-6">
+                <SettingSection title="GitHub Integration">
+                  <div className="py-4">
+                    <GitHubConnectionManager />
+                  </div>
+                </SettingSection>
+
+                <SettingSection title="Repositories">
+                  <div className="py-4">
+                    <ConnectedRepositoryList />
+                  </div>
+                </SettingSection>
+              </div>
             )}
           </div>
         </div>
