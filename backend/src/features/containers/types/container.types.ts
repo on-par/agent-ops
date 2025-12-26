@@ -1,6 +1,31 @@
 import type { ContainerStatus } from "../../../shared/db/schema.js";
 
 /**
+ * Log level for container log entries
+ */
+export type LogLevel = 'info' | 'warn' | 'error' | 'debug';
+
+/**
+ * Structured log entry for SSE streaming
+ */
+export interface StructuredLogEntry {
+  /** ISO 8601 timestamp */
+  timestamp: string;
+  /** Log level detected from message content */
+  level: LogLevel;
+  /** Log message content */
+  message: string;
+}
+
+/**
+ * SSE event payload for container stream
+ */
+export type ContainerStreamEvent =
+  | { type: 'log'; data: StructuredLogEntry }
+  | { type: 'container-stopped'; data: { exitCode?: number } }
+  | { type: 'error'; data: { message: string } };
+
+/**
  * Resource limits for container execution
  */
 export interface ContainerResourceLimits {
