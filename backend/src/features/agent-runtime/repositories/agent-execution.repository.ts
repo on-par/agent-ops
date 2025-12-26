@@ -172,6 +172,19 @@ export class AgentExecutionRepository {
   }
 
   /**
+   * Find executions by multiple statuses
+   * @param statuses - Array of statuses to filter by
+   * @returns Array of executions matching any of the statuses
+   */
+  async findByStatuses(statuses: AgentExecutionStatus[]): Promise<AgentExecution[]> {
+    const { inArray } = await import("drizzle-orm");
+    return await this.db
+      .select()
+      .from(agentExecutions)
+      .where(inArray(agentExecutions.status, statuses));
+  }
+
+  /**
    * Find most recent executions
    * @param limit - Maximum number of executions to return (default: 10)
    * @returns Array of recent executions ordered by createdAt descending

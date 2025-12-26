@@ -15,6 +15,7 @@ import { GitHubConnectionRepository } from "./features/github/repositories/githu
 import { repositoriesRoutes } from "./features/repositories/handler/repositories.handler.js";
 import { pullRequestsHandler } from "./features/pull-requests/handler/pull-requests.handler.js";
 import { agentRuntimeRoutes } from "./features/agent-runtime/handler/agent-runtime.handler.js";
+import { agentsHandler } from "./features/agent-runtime/handler/agents.handler.js";
 import { concurrencyHandler } from "./features/concurrency/handler/concurrency.handler.js";
 import { containerRoutes } from "./features/containers/handler/container.handler.js";
 import { containerLogsRoutes } from "./features/containers/handler/container-logs.handler.js";
@@ -188,6 +189,14 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
     const workerPoolService = new WorkerPoolService(workerRepository);
     await app.register(workersHandler, {
       prefix: "/api/workers",
+      workerPoolService,
+    });
+
+    // Agent lifecycle management routes
+    await app.register(agentsHandler, {
+      prefix: "/api/agents",
+      db,
+      config,
       workerPoolService,
     });
 
