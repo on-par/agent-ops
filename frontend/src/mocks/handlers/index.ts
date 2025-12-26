@@ -6,6 +6,8 @@
 import { http, HttpResponse } from 'msw';
 import { API_BASE } from '../../lib/api';
 import type { WorkItem, Worker, DashboardStats } from '../../types/dashboard';
+import { containerHandlers } from './containers';
+import { executionHandlers } from './executions';
 
 /**
  * Work Items handlers
@@ -750,4 +752,6 @@ export const handlers = [
   ...metricsHandlers,
   ...configHandlers,
   ...dashboardHandlers,
+  ...containerHandlers,
+  ...executionHandlers,
 ];
