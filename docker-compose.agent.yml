@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  agent:
+    build:
+      context: .
+      dockerfile: backend/agent.Dockerfile
+      args:
+        NODE_ENV: production
+    image: agent-ops/agent:latest
+
+    # Volume mounts for workspace and beads database
+    volumes:
+      - ${WORKSPACE_PATH}:/workspace
+      - ${BEADS_PATH:-$(pwd)/.beads}:/workspace/.beads:ro
+      - agent-npm-cache:/home/node/.npm
+
+    # Environment variables for agent execution
+    environment:
+      TASK_ID: ${TASK_ID}
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      LLM_MODEL: ${LLM_MODEL}
+      LLM_BASE_URL: ${LLM_BASE_URL}
+      MAX_ITERATIONS: ${MAX_ITERATIONS:-10}
+
+      # API keys for cloud providers
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+
+      # Git configuration for commits
+      GIT_AUTHOR_NAME: ${GIT_AUTHOR_NAME:-Agent}
+      GIT_AUTHOR_EMAIL: ${GIT_AUTHOR_EMAIL:-agent@agent-ops.local}
+
+    # Restart policy for task failures
+    restart: on-failure
+
+    # User for file permissions (matches host user)
+    user: "${UID:-1000}:${GID:-1000}"
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 2G
+
+    # Network configuration
+    networks:
+      - agent-network
+
+    # Working directory
+    working_dir: /workspace
+
+# Named volumes for caching
+volumes:
+  agent-npm-cache:
+
+# Network configuration
+networks:
+  agent-network:
+    driver: bridge

@@ -690,4 +690,213 @@ describe("ContainerManagerService", () => {
       await expect(service.getLogs("non-existent-id")).rejects.toThrow();
     });
   });
+
+  describe("createAgentContainer", () => {
+    it("should create agent container with correct environment variables", async () => {
+      // Arrange
+      const config = {
+        taskId: "test-task-1",
+        llmProvider: "ollama" as const,
+        llmModel: "qwen2.5-coder:7b",
+        workspacePath: "/tmp/workspace",
+        beadsPath: "/tmp/.beads",
+      };
+
+      // Act
+      const container = await service.createAgentContainer(config);
+
+      // Assert
+      expect(container).toBeDefined();
+      expect(container.name).toContain("agent-test-task-1");
+      expect(container.image).toBe("agent-ops/agent:latest");
+
+      // Verify Docker options
+      const createOptions = mockDockerClient.createdContainers.get(container.containerId);
+      expect(createOptions).toBeDefined();
+      expect(createOptions!.Env).toContainEqual("TASK_ID=test-task-1");
+      expect(createOptions!.Env).toContainEqual("LLM_PROVIDER=ollama");
+      expect(createOptions!.Env).toContainEqual("LLM_MODEL=qwen2.5-coder:7b");
+      expect(createOptions!.Env).toContainEqual("NODE_ENV=production");
+    });
+
+    it("should configure volume mounts correctly", async () => {
+      // Arrange
+      const config = {
+        taskId: "test-task-2",
+        llmProvider: "ollama" as const,
+        llmModel: "qwen2.5-coder:7b",
+        workspacePath: "/workspace",
+        beadsPath: "/repo/.beads",
+      };
+
+      // Act
+      const container = await service.createAgentContainer(config);
+
+      // Assert
+      const createOptions = mockDockerClient.createdContainers.get(container.containerId);
+      expect(createOptions?.HostConfig?.Binds).toContainEqual("/workspace:/workspace");
+      expect(createOptions?.HostConfig?.Binds).toContainEqual("/repo/.beads:/workspace/.beads:ro");
+    });
+
+    it("should apply resource limits", async () => {
+      // Arrange
+      const config = {
+        taskId: "test-task-3",
+        llmProvider: "ollama" as const,
+        llmModel: "qwen2.5-coder:7b",
+        workspacePath: "/workspace",
+        beadsPath: "/repo/.beads",
+      };
+
+      // Act
+      const container = await service.createAgentContainer(config);
+
+      // Assert
+      const createOptions = mockDockerClient.createdContainers.get(container.containerId);
+      // 2 CPU cores = 2 * 1000000000 nanocpus
+      expect(createOptions?.HostConfig?.NanoCpus).toBe(2 * 1000000000);
+      // 4GB = 4 * 1024 * 1024 * 1024 bytes
+      expect(createOptions?.HostConfig?.Memory).toBe(4 * 1024 * 1024 * 1024);
+    });
+
+    it("should configure restart policy", async () => {
+      // Arrange
+      const config = {
+        taskId: "test-task-4",
+        llmProvider: "ollama" as const,
+        llmModel: "qwen2.5-coder:7b",
+        workspacePath: "/workspace",
+        beadsPath: "/repo/.beads",
+      };
+
+      // Act
+      const container = await service.createAgentContainer(config);
+
+      // Assert
+      const createOptions = mockDockerClient.createdContainers.get(container.containerId);
+      expect(createOptions?.HostConfig?.RestartPolicy).toEqual({
+        Name: "on-failure",
+        MaximumRetryCount: 3,
+      });
+    });
+
+    it("should include optional LLM base URL if provided", async () => {
+      // Arrange
+      const config = {
+        taskId: "test-task-5",
+        llmProvider: "openai" as const,
+        llmModel: "gpt-4o",
+        llmBaseUrl: "https://custom.openai.com/v1",
+        workspacePath: "/workspace",
+        beadsPath: "/repo/.beads",
+      };
+
+      // Act
+      const container = await service.createAgentContainer(config);
+
+      // Assert
+      const createOptions = mockDockerClient.createdContainers.get(container.containerId);
+      expect(createOptions!.Env).toContainEqual("LLM_BASE_URL=https://custom.openai.com/v1");
+    });
+
+    it("should include API keys if provided", async () => {
+      // Arrange
+      const config = {
+        taskId: "test-task-6",
+        llmProvider: "openai" as const,
+        llmModel: "gpt-4o",
+        workspacePath: "/workspace",
+        beadsPath: "/repo/.beads",
+        apiKeys: {
+          OPENAI_API_KEY: "sk-test-key-123",
+        },
+      };
+
+      // Act
+      const container = await service.createAgentContainer(config);
+
+      // Assert
+      const createOptions = mockDockerClient.createdContainers.get(container.containerId);
+      expect(createOptions!.Env).toContainEqual("OPENAI_API_KEY=sk-test-key-123");
+    });
+
+    it("should include max iterations if provided", async () => {
+      // Arrange
+      const config = {
+        taskId: "test-task-7",
+        llmProvider: "ollama" as const,
+        llmModel: "qwen2.5-coder:7b",
+        workspacePath: "/workspace",
+        beadsPath: "/repo/.beads",
+        maxIterations: 20,
+      };
+
+      // Act
+      const container = await service.createAgentContainer(config);
+
+      // Assert
+      const createOptions = mockDockerClient.createdContainers.get(container.containerId);
+      expect(createOptions!.Env).toContainEqual("MAX_ITERATIONS=20");
+    });
+
+    it("should set non-root user", async () => {
+      // Arrange
+      const config = {
+        taskId: "test-task-8",
+        llmProvider: "ollama" as const,
+        llmModel: "qwen2.5-coder:7b",
+        workspacePath: "/workspace",
+        beadsPath: "/repo/.beads",
+      };
+
+      // Act
+      const container = await service.createAgentContainer(config);
+
+      // Assert
+      const createOptions = mockDockerClient.createdContainers.get(container.containerId);
+      expect(createOptions?.User).toBe("1000:1000");
+    });
+
+    it("should throw error if taskId is missing", async () => {
+      // Arrange
+      const config = {
+        taskId: "",
+        llmProvider: "ollama" as const,
+        llmModel: "qwen2.5-coder:7b",
+        workspacePath: "/workspace",
+        beadsPath: "/repo/.beads",
+      };
+
+      // Act & Assert
+      await expect(service.createAgentContainer(config)).rejects.toThrow("taskId is required");
+    });
+
+    it("should throw error if workspacePath is missing", async () => {
+      // Arrange
+      const config = {
+        taskId: "test-task-9",
+        llmProvider: "ollama" as const,
+        llmModel: "qwen2.5-coder:7b",
+        workspacePath: "",
+        beadsPath: "/repo/.beads",
+      };
+
+      // Act & Assert
+      await expect(service.createAgentContainer(config)).rejects.toThrow("workspacePath is required");
+    });
+
+    it("should throw error if beadsPath is missing", async () => {
+      // Arrange
+      const config = {
+        taskId: "test-task-10",
+        llmProvider: "ollama" as const,
+        llmModel: "qwen2.5-coder:7b",
+        workspacePath: "/workspace",
+        beadsPath: "",
+      };
+
+      // Act & Assert
+      await expect(service.createAgentContainer(config)).rejects.toThrow("beadsPath is required");
+    });
+  });
 });

@@ -1,8 +1,47 @@
-node_modules
-dist
-.git
-*.test.ts
-coverage
+# Dependencies
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Environment
 .env
-.env.local
-.env.*.local
+.env.*
+.npmrc
+
+# Build artifacts
+dist/
+*.log
+
+# Git and version control
+.git
+.gitignore
+
+# Beads (issue tracking)
+.beads/
+
+# Test files
+test/
+*.test.ts
+*.spec.ts
+**/*.test.ts
+**/*.spec.ts
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation
+docs/
+README.md
+
+# Other
+.prettierignore
+.eslintignore
+tsconfig.json

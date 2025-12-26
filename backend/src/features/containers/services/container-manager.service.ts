@@ -8,7 +8,7 @@ import type {
   DockerClientInterface,
   DockerLogsOptions,
 } from "../interfaces/docker-client.interface.js";
-import type { ContainerCreateOptions } from "../types/container.types.js";
+import type { ContainerCreateOptions, AgentContainerConfig } from "../types/container.types.js";
 import { DockerClientService } from "./docker-client.service.js";
 
 /**
@@ -110,6 +110,124 @@ export class ContainerManagerService {
     } catch (error) {
       throw new Error(
         `Failed to create container: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  /**
+   * Create an agent container for task execution
+   * Configures environment variables, volume mounts, and resource limits
+   * @param config - Agent container configuration
+   * @returns The created container record
+   */
+  async createAgentContainer(config: AgentContainerConfig): Promise<Container> {
+    // Validate required config
+    if (!config.taskId) {
+      throw new Error('taskId is required in AgentContainerConfig');
+    }
+    if (!config.workspacePath) {
+      throw new Error('workspacePath is required in AgentContainerConfig');
+    }
+    if (!config.beadsPath) {
+      throw new Error('beadsPath is required in AgentContainerConfig');
+    }
+
+    // Build environment variables
+    const env: Record<string, string> = {
+      TASK_ID: config.taskId,
+      LLM_PROVIDER: config.llmProvider,
+      LLM_MODEL: config.llmModel,
+      NODE_ENV: 'production',
+    };
+
+    // Add optional LLM base URL
+    if (config.llmBaseUrl) {
+      env.LLM_BASE_URL = config.llmBaseUrl;
+    }
+
+    // Add max iterations if provided
+    if (config.maxIterations) {
+      env.MAX_ITERATIONS = String(config.maxIterations);
+    }
+
+    // Add API keys from config
+    if (config.apiKeys) {
+      Object.entries(config.apiKeys).forEach(([key, value]) => {
+        env[key] = value;
+      });
+    }
+
+    // Get workspace path for volume mount
+    let workspacePath: string | undefined;
+    if (config.workspacePath) {
+      // workspacePath is directly provided in config
+      workspacePath = config.workspacePath;
+    }
+
+    // Create database record with Docker options (we need to use lower-level Docker API for volume mounts)
+    const dockerOptions: {
+      Image: string;
+      name: string;
+      HostConfig?: {
+        Binds?: string[];
+        RestartPolicy?: {
+          Name: string;
+          MaximumRetryCount: number;
+        };
+        NanoCpus?: number;
+        Memory?: number;
+      };
+      Env?: string[];
+      WorkingDir?: string;
+      User?: string;
+    } = {
+      Image: 'agent-ops/agent:latest',
+      name: `agent-${config.taskId}-${Date.now()}`,
+      WorkingDir: '/workspace',
+      User: '1000:1000', // Run as non-root user
+    };
+
+    // Configure volume mounts
+    dockerOptions.HostConfig = {
+      Binds: [
+        // Mount workspace as read-write
+        `${workspacePath}:/workspace`,
+        // Mount beads directory as read-only
+        `${config.beadsPath}:/workspace/.beads:ro`,
+      ],
+      // Restart policy: on-failure with max 3 retries
+      RestartPolicy: {
+        Name: 'on-failure',
+        MaximumRetryCount: 3,
+      },
+      // Resource limits: 2 CPU cores and 4GB memory
+      NanoCpus: 2 * 1000000000, // 2 cores in nanocpus
+      Memory: 4 * 1024 * 1024 * 1024, // 4GB in bytes
+    };
+
+    // Add environment variables
+    dockerOptions.Env = Object.entries(env).map(([key, value]) => `${key}=${value}`);
+
+    try {
+      // Create Docker container with agent-specific configuration
+      const dockerContainerId = await this.dockerClient.createContainer(dockerOptions);
+
+      // Create database record
+      const container = await this.repository.create({
+        id: uuidv4(),
+        containerId: dockerContainerId,
+        name: dockerOptions.name,
+        image: 'agent-ops/agent:latest',
+        status: 'creating',
+        workspaceId: null,
+        executionId: null,
+        createdAt: new Date(),
+      });
+
+      return container;
+    } catch (error) {
+      throw new Error(
+        `Failed to create agent container: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   }

@@ -94,3 +94,31 @@ export interface ContainerInfo {
   /** Associated execution ID */
   executionId?: string;
 }
+
+/**
+ * LLM provider type for agent containers
+ */
+export type AgentLLMProvider = 'ollama' | 'openai' | 'anthropic' | 'openrouter';
+
+/**
+ * Configuration for creating an agent container
+ * Used by ContainerManagerService.createAgentContainer()
+ */
+export interface AgentContainerConfig {
+  /** Beads issue ID to execute */
+  taskId: string;
+  /** LLM provider type */
+  llmProvider: AgentLLMProvider;
+  /** LLM model name */
+  llmModel: string;
+  /** Optional custom LLM base URL (uses provider default if not provided) */
+  llmBaseUrl?: string;
+  /** Path to workspace directory on host */
+  workspacePath: string;
+  /** Path to .beads directory on host */
+  beadsPath: string;
+  /** API keys for cloud providers */
+  apiKeys?: Record<string, string>;
+  /** Maximum agent iterations (default: 10) */
+  maxIterations?: number;
+}
