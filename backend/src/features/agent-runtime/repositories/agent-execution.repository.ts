@@ -170,4 +170,18 @@ export class AgentExecutionRepository {
 
     return await this.update(id, updates);
   }
+
+  /**
+   * Find most recent executions
+   * @param limit - Maximum number of executions to return (default: 10)
+   * @returns Array of recent executions ordered by createdAt descending
+   */
+  async findRecent(limit: number = 10): Promise<AgentExecution[]> {
+    const { desc } = await import("drizzle-orm");
+    return await this.db
+      .select()
+      .from(agentExecutions)
+      .orderBy(desc(agentExecutions.createdAt))
+      .limit(limit);
+  }
 }

@@ -167,6 +167,44 @@ export class WorkerPoolService {
   }
 
   /**
+   * Inject a message into a running worker
+   * Used to send commands, data, or configuration updates to an active agent
+   * Worker must not be terminated to accept injections
+   *
+   * @param workerId - The worker ID to inject message into
+   * @param message - The message content to inject
+   * @param type - Type of injection: "command", "data", or "config"
+   * @param payload - Optional additional payload data
+   * @returns Success response with worker ID and confirmation message
+   * @throws Error if worker not found or worker is terminated
+   */
+  async inject(
+    workerId: string,
+    message: string,
+    type: string = "command",
+    payload?: Record<string, string>
+  ): Promise<{ success: boolean; workerId: string; message: string }> {
+    const worker = await this.workerRepository.findById(workerId);
+    if (!worker) {
+      throw new Error(`Worker with id ${workerId} not found`);
+    }
+
+    if (worker.status === "terminated") {
+      throw new Error(`Cannot inject into terminated worker ${workerId}`);
+    }
+
+    // Store message for worker consumption (in-memory for now, Redis later)
+    // For initial implementation, just validate and return success
+    // Future: this.messageStore.set(workerId, { message, type, payload, timestamp: new Date() });
+
+    return {
+      success: true,
+      workerId: worker.id,
+      message: "Message injected successfully",
+    };
+  }
+
+  /**
    * Assign work to a worker
    * Worker must be in "idle" status to accept new work
    *

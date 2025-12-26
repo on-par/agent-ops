@@ -76,6 +76,17 @@ export class GitHubPRService {
       draft: draft ?? false,
     });
 
+    // Save PR details back to work item
+    try {
+      await this.workItemRepo.update(workItemId, {
+        githubPrNumber: pr.number,
+        githubPrUrl: pr.html_url,
+      });
+    } catch (error) {
+      // Log warning but don't fail PR creation if update fails
+      console.warn("Failed to update work item with PR details:", error);
+    }
+
     return {
       number: pr.number,
       htmlUrl: pr.html_url,

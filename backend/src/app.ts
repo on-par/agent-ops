@@ -16,6 +16,22 @@ import { repositoriesRoutes } from "./features/repositories/handler/repositories
 import { pullRequestsHandler } from "./features/pull-requests/handler/pull-requests.handler.js";
 import { agentRuntimeRoutes } from "./features/agent-runtime/handler/agent-runtime.handler.js";
 import { concurrencyHandler } from "./features/concurrency/handler/concurrency.handler.js";
+import { containerRoutes } from "./features/containers/handler/container.handler.js";
+import { containerLogsRoutes } from "./features/containers/handler/container-logs.handler.js";
+import { containerTerminalHandler } from "./features/containers/handler/container-terminal.handler.js";
+import { dashboardHandler } from "./features/dashboard/handler/dashboard.handler.js";
+import { executionsHandler } from "./features/executions/handler/executions.handler.js";
+import { websocketHandler } from "./features/dashboard/handler/websocket.handler.js";
+import { WebSocketHubService } from "./shared/websocket/websocket-hub.service.js";
+import { providerSettingsHandler } from "./features/llm-providers/handler/provider-settings.handler.js";
+import { workersHandler } from "./features/workers/handler/workers.handler.js";
+import { WorkerRepository } from "./features/workers/repositories/worker.repository.js";
+import { WorkerPoolService } from "./features/workers/services/worker-pool.service.js";
+import { templatesHandler } from "./features/templates/handler/templates.handler.js";
+import { TemplateRepository } from "./features/templates/repositories/template.repository.js";
+import { TemplateRegistryService } from "./features/templates/services/template-registry.service.js";
+import { metricsHandler } from "./features/metrics/handler/metrics.handler.js";
+import { tracesHandler } from "./features/metrics/handler/traces.handler.js";
 
 const HEALTH_STATUS_OK = "ok";
 
@@ -50,6 +66,15 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
 
   app.get("/health", async () => {
     return { status: HEALTH_STATUS_OK };
+  });
+
+  // Create WebSocket hub service for real-time communication
+  const hubService = new WebSocketHubService();
+
+  // Register WebSocket handler for real-time dashboard updates
+  await app.register(websocketHandler, {
+    prefix: "/api/dashboard",
+    hubService,
   });
 
   // Register routes if database is provided
@@ -109,6 +134,73 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
     await app.register(concurrencyHandler, {
       prefix: "/api/concurrency",
       concurrencyService,
+    });
+
+    // Container management routes
+    await app.register(containerRoutes, {
+      prefix: "/api/containers",
+      db,
+      config,
+    });
+
+    // Container logs SSE routes
+    await app.register(containerLogsRoutes, {
+      prefix: "/api/containers",
+      db,
+      config,
+    });
+
+    // Container terminal WebSocket routes
+    await app.register(containerTerminalHandler, {
+      prefix: "/api/containers",
+      db,
+      config,
+    });
+
+    // Dashboard statistics routes
+    await app.register(dashboardHandler, {
+      prefix: "/api/dashboard",
+      db,
+    });
+
+    // Execution logs routes
+    await app.register(executionsHandler, {
+      prefix: "/api/executions",
+      db,
+    });
+
+    // LLM Provider settings routes
+    await app.register(providerSettingsHandler, {
+      prefix: "/api/provider-settings",
+      db,
+    });
+
+    // Templates registry routes
+    const templateRepository = new TemplateRepository(db);
+    const templateService = new TemplateRegistryService(templateRepository);
+    await app.register(templatesHandler, {
+      prefix: "/api/templates",
+      templateService,
+    });
+
+    // Worker pool routes
+    const workerRepository = new WorkerRepository(db);
+    const workerPoolService = new WorkerPoolService(workerRepository);
+    await app.register(workersHandler, {
+      prefix: "/api/workers",
+      workerPoolService,
+    });
+
+    // Metrics routes
+    await app.register(metricsHandler, {
+      prefix: "/api/metrics",
+      db,
+    });
+
+    // Traces routes (separate from metrics)
+    await app.register(tracesHandler, {
+      prefix: "/api/traces",
+      db,
     });
   }
 

@@ -9,13 +9,17 @@
 #   CLAUDE_CMD=ccymcp ./scripts/rpi-worker.sh  # Use MCP-enabled claude
 #
 # Options:
-#   --dry-run           Show tasks without executing
-#   --max N             Maximum number of tasks to run
-#   --timeout M         Timeout per phase in minutes (default: 30)
-#   --model M           Model for phases: sonnet, opus (default: sonnet)
-#   --validator-model M Model for FAR/FACTS validation (default: sonnet)
-#   --max-retries N     Max validation retries per phase (default: 2)
-#   --help              Show this help
+#   --dry-run              Show tasks without executing
+#   --max N                Maximum number of tasks to run
+#   --timeout M            Timeout per phase in minutes (default: 30)
+#   --model M              Model for ALL phases: sonnet, opus, haiku
+#   --research-model M     Model for research phase (default: sonnet)
+#   --plan-model M         Model for plan phase (default: sonnet)
+#   --implement-model M    Model for implement phase (default: haiku)
+#   --validator-model M    Model for FAR/FACTS validation (default: sonnet)
+#   --max-retries N        Max validation retries per phase (default: 2)
+#   --task-delay S         Seconds to wait between tasks (default: 10)
+#   --help                 Show this help
 #
 # Environment:
 #   CLAUDE_CMD    Claude command with flags (default: claude)
@@ -29,10 +33,26 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORK_DIR="${WORKER_DIR:-$(pwd)}"
 LOG_DIR="$WORK_DIR/.claude-runs"
 TMP_DIR="$WORK_DIR/.claude-runs/tmp"
-DEFAULT_TIMEOUT=30
+DEFAULT_TIMEOUT=300
 MAX_TASKS=0
 CLAUDE_CMD="${CLAUDE_CMD:-claude}"
 MAX_WAIT_SECONDS=3600  # 1 hour - exit if cooldown exceeds this
+TASK_DELAY=10  # seconds between tasks to avoid rate limits
+CONSECUTIVE_RATE_LIMITS=0  # track for exponential backoff
+
+# Metrics tracking
+METRICS_FILE="$LOG_DIR/metrics-$(date '+%Y-%m-%d-%H-%M-%S').json"
+RUN_START_TIME=$(date +%s)
+TOTAL_API_CALLS=0
+RATE_LIMIT_HITS=0
+
+# Phase time accumulators (in seconds)
+TOTAL_TIME_RESEARCH=0
+TOTAL_TIME_FAR_VALIDATION=0
+TOTAL_TIME_PLAN=0
+TOTAL_TIME_FACTS_VALIDATION=0
+TOTAL_TIME_IMPLEMENT=0
+TOTAL_TIME_SUMMARY=0
 
 # Colors
 RED='\033[0;31m'
@@ -47,12 +67,15 @@ NC='\033[0m'
 PATTERN=""
 DRY_RUN=false
 TIMEOUT_MINS=$DEFAULT_TIMEOUT
-MODEL_CHOICE="sonnet"
-VALIDATOR_MODEL="sonnet"
+RESEARCH_MODEL="sonnet"
+PLAN_MODEL="sonnet"
+IMPLEMENT_MODEL="haiku"
+VALIDATOR_MODEL="haiku"
 MAX_VALIDATION_RETRIES=2
+TASK_DELAY_ARG=""  # will override TASK_DELAY if set
 
 show_help() {
-    head -20 "$0" | tail -18 | sed 's/^# //' | sed 's/^#//'
+    head -25 "$0" | tail -23 | sed 's/^# //' | sed 's/^#//'
     exit 0
 }
 
@@ -71,7 +94,22 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --model)
-            MODEL_CHOICE="$2"
+            # Set all phase models at once
+            RESEARCH_MODEL="$2"
+            PLAN_MODEL="$2"
+            IMPLEMENT_MODEL="$2"
+            shift 2
+            ;;
+        --research-model)
+            RESEARCH_MODEL="$2"
+            shift 2
+            ;;
+        --plan-model)
+            PLAN_MODEL="$2"
+            shift 2
+            ;;
+        --implement-model)
+            IMPLEMENT_MODEL="$2"
             shift 2
             ;;
         --validator-model)
@@ -80,6 +118,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --max-retries)
             MAX_VALIDATION_RETRIES="$2"
+            shift 2
+            ;;
+        --task-delay)
+            TASK_DELAY="$2"
             shift 2
             ;;
         --help|-h)
@@ -100,16 +142,196 @@ log() {
     echo -e "$(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$MAIN_LOG"
 }
 
+# Metrics functions
+# Track time for a specific phase
+# Usage: record_phase_time "task_id" "phase" start_time end_time
+record_phase_time() {
+    local task_id="$1"
+    local phase="$2"
+    local start_time="$3"
+    local end_time="$4"
+    local duration=$((end_time - start_time))
+
+    # Accumulate totals based on phase name
+    case "$phase" in
+        research)
+            TOTAL_TIME_RESEARCH=$((TOTAL_TIME_RESEARCH + duration))
+            ;;
+        far_validation)
+            TOTAL_TIME_FAR_VALIDATION=$((TOTAL_TIME_FAR_VALIDATION + duration))
+            ;;
+        plan)
+            TOTAL_TIME_PLAN=$((TOTAL_TIME_PLAN + duration))
+            ;;
+        facts_validation)
+            TOTAL_TIME_FACTS_VALIDATION=$((TOTAL_TIME_FACTS_VALIDATION + duration))
+            ;;
+        implement)
+            TOTAL_TIME_IMPLEMENT=$((TOTAL_TIME_IMPLEMENT + duration))
+            ;;
+        summary)
+            TOTAL_TIME_SUMMARY=$((TOTAL_TIME_SUMMARY + duration))
+            ;;
+    esac
+}
+
+# Format seconds as human-readable duration
+format_duration() {
+    local seconds="$1"
+    local hours=$((seconds / 3600))
+    local minutes=$(((seconds % 3600) / 60))
+    local secs=$((seconds % 60))
+
+    if [ "$hours" -gt 0 ]; then
+        printf "%dh%02dm%02ds" "$hours" "$minutes" "$secs"
+    elif [ "$minutes" -gt 0 ]; then
+        printf "%dm%02ds" "$minutes" "$secs"
+    else
+        printf "%ds" "$secs"
+    fi
+}
+
+# Write metrics summary to log and JSON file
+write_metrics_summary() {
+    local completed="$1"
+    local failed="$2"
+    local total="$3"
+
+    local run_end_time=$(date +%s)
+    local total_duration=$((run_end_time - RUN_START_TIME))
+
+    # Calculate tasks per hour
+    local tasks_per_hour="0"
+    if [ "$total_duration" -gt 0 ] && [ "$completed" -gt 0 ]; then
+        tasks_per_hour=$(echo "scale=2; $completed * 3600 / $total_duration" | bc 2>/dev/null || echo "N/A")
+    fi
+
+    log ""
+    log "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    log "${BLUE}                    METRICS SUMMARY                        ${NC}"
+    log "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    log ""
+    log "${CYAN}Run Statistics:${NC}"
+    log "  Total run time:     $(format_duration $total_duration)"
+    log "  Tasks completed:    ${GREEN}$completed${NC}"
+    log "  Tasks failed:       ${RED}$failed${NC}"
+    log "  Tasks per hour:     ${YELLOW}$tasks_per_hour${NC}"
+    log "  Total API calls:    $TOTAL_API_CALLS"
+    log "  Rate limit hits:    ${YELLOW}$RATE_LIMIT_HITS${NC}"
+    log ""
+    log "${CYAN}Phase Totals:${NC}"
+
+    # Show total time per phase using the accumulator variables
+    [ "$TOTAL_TIME_RESEARCH" -gt 0 ] && \
+        log "  Research:         $(format_duration $TOTAL_TIME_RESEARCH)"
+    [ "$TOTAL_TIME_FAR_VALIDATION" -gt 0 ] && \
+        log "  FAR Validation:   $(format_duration $TOTAL_TIME_FAR_VALIDATION)"
+    [ "$TOTAL_TIME_PLAN" -gt 0 ] && \
+        log "  Planning:         $(format_duration $TOTAL_TIME_PLAN)"
+    [ "$TOTAL_TIME_FACTS_VALIDATION" -gt 0 ] && \
+        log "  FACTS Validation: $(format_duration $TOTAL_TIME_FACTS_VALIDATION)"
+    [ "$TOTAL_TIME_IMPLEMENT" -gt 0 ] && \
+        log "  Implementation:   $(format_duration $TOTAL_TIME_IMPLEMENT)"
+    [ "$TOTAL_TIME_SUMMARY" -gt 0 ] && \
+        log "  Summary Gen:      $(format_duration $TOTAL_TIME_SUMMARY)"
+
+    log ""
+    log "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+    # Write JSON metrics file
+    cat > "$METRICS_FILE" << EOF
+{
+  "run_start": "$(date -r $RUN_START_TIME '+%Y-%m-%dT%H:%M:%S' 2>/dev/null || date -d "@$RUN_START_TIME" '+%Y-%m-%dT%H:%M:%S' 2>/dev/null || echo $RUN_START_TIME)",
+  "run_end": "$(date -r $run_end_time '+%Y-%m-%dT%H:%M:%S' 2>/dev/null || date -d "@$run_end_time" '+%Y-%m-%dT%H:%M:%S' 2>/dev/null || echo $run_end_time)",
+  "total_duration_seconds": $total_duration,
+  "total_duration_formatted": "$(format_duration $total_duration)",
+  "tasks": {
+    "completed": $completed,
+    "failed": $failed,
+    "total": $total,
+    "per_hour": "$tasks_per_hour"
+  },
+  "api": {
+    "total_calls": $TOTAL_API_CALLS,
+    "rate_limit_hits": $RATE_LIMIT_HITS
+  },
+  "phase_totals_seconds": {
+    "research": $TOTAL_TIME_RESEARCH,
+    "far_validation": $TOTAL_TIME_FAR_VALIDATION,
+    "plan": $TOTAL_TIME_PLAN,
+    "facts_validation": $TOTAL_TIME_FACTS_VALIDATION,
+    "implement": $TOTAL_TIME_IMPLEMENT,
+    "summary": $TOTAL_TIME_SUMMARY
+  },
+  "models": {
+    "research": "$RESEARCH_MODEL",
+    "plan": "$PLAN_MODEL",
+    "implement": "$IMPLEMENT_MODEL",
+    "validator": "$VALIDATOR_MODEL"
+  },
+  "config": {
+    "timeout_mins": $TIMEOUT_MINS,
+    "max_retries": $MAX_VALIDATION_RETRIES,
+    "task_delay": $TASK_DELAY,
+    "pattern": "${PATTERN:-null}"
+  }
+}
+EOF
+
+    log "Metrics written to: ${CYAN}$METRICS_FILE${NC}"
+}
+
 # Check if output indicates rate limiting and extract wait time
 # Returns: 0 if rate limited (sets RATE_LIMIT_SECONDS), 1 if not rate limited
 check_rate_limit() {
     local output="$1"
+    local exit_code="${2:-0}"
     RATE_LIMIT_SECONDS=0
 
-    # Check for common rate limit patterns
-    # Pattern 1: "retry after X seconds"
-    if echo "$output" | grep -qi "rate.limit\|too.many.requests\|429\|overloaded"; then
-        # Try to extract seconds from various patterns
+    # Check for timeout (exit code 124 from timeout command)
+    if [ "$exit_code" -eq 124 ]; then
+        # Timeout is not a rate limit, don't treat as such
+        return 1
+    fi
+
+    # Comprehensive rate limit pattern matching
+    # Anthropic API patterns:
+    #   - "rate_limit_error"
+    #   - "overloaded_error"
+    #   - HTTP 429, 529
+    #   - "Request too large" (token limits)
+    #   - "credit balance is too low"
+    # Claude CLI patterns:
+    #   - "Rate limit exceeded"
+    #   - "Too many requests"
+    #   - "Please try again"
+
+    local rate_limit_patterns=(
+        "rate.limit"
+        "rate_limit_error"
+        "too.many.requests"
+        "overloaded"
+        "overloaded_error"
+        "429"
+        "529"
+        "quota"
+        "exceeded.*limit"
+        "limit.*exceeded"
+        "try.again.later"
+        "try.again.in"
+        "temporarily.unavailable"
+        "capacity"
+        "throttl"
+    )
+
+    local pattern_regex
+    pattern_regex=$(IFS="|"; echo "${rate_limit_patterns[*]}")
+
+    if echo "$output" | grep -qiE "$pattern_regex"; then
+        # Increment rate limit counter for metrics
+        ((RATE_LIMIT_HITS++)) || true
+
+        # Try to extract wait time from various patterns
         local seconds=""
 
         # Pattern: "retry after 123 seconds" or "wait 123 seconds"
@@ -118,6 +340,11 @@ check_rate_limit() {
         # Pattern: "retry-after: 123" header style
         if [ -z "$seconds" ]; then
             seconds=$(echo "$output" | grep -oiE "retry-after:?\s*[0-9]+" | grep -oE "[0-9]+" | head -1)
+        fi
+
+        # Pattern: "in X seconds"
+        if [ -z "$seconds" ]; then
+            seconds=$(echo "$output" | grep -oiE "in\s+[0-9]+\s+second" | grep -oE "[0-9]+" | head -1)
         fi
 
         # Pattern: "in X minutes" - convert to seconds
@@ -143,9 +370,14 @@ check_rate_limit() {
             fi
         fi
 
-        # Default fallback: 60 seconds if we detected rate limit but couldn't parse time
+        # Exponential backoff based on consecutive rate limits
+        # Base: 60s, then 120s, 240s, etc.
+        local base_wait=60
         if [ -z "$seconds" ] || [ "$seconds" -eq 0 ]; then
-            seconds=60
+            local backoff_multiplier=$((1 << CONSECUTIVE_RATE_LIMITS))  # 2^n
+            seconds=$((base_wait * backoff_multiplier))
+            # Cap at 30 minutes
+            [ "$seconds" -gt 1800 ] && seconds=1800
         fi
 
         RATE_LIMIT_SECONDS=$seconds
@@ -161,17 +393,21 @@ handle_rate_limit() {
     local wait_seconds="$1"
     local context="$2"
 
+    # Increment consecutive rate limit counter
+    ((CONSECUTIVE_RATE_LIMITS++)) || true
+
     if [ "$wait_seconds" -gt "$MAX_WAIT_SECONDS" ]; then
         local wait_mins=$((wait_seconds / 60))
         local max_mins=$((MAX_WAIT_SECONDS / 60))
         log "${RED}[RATE LIMIT]${NC} Cooldown ${wait_mins}m exceeds max wait ${max_mins}m"
+        log "${YELLOW}[RATE LIMIT]${NC} Consecutive rate limits: $CONSECUTIVE_RATE_LIMITS"
         log "${YELLOW}[RATE LIMIT]${NC} Gracefully exiting. Resume later with: $0 $PATTERN"
         return 1
     fi
 
     local wait_mins=$((wait_seconds / 60))
     local wait_secs=$((wait_seconds % 60))
-    log "${YELLOW}[RATE LIMIT]${NC} Hit rate limit during $context"
+    log "${YELLOW}[RATE LIMIT]${NC} Hit rate limit during $context (consecutive: $CONSECUTIVE_RATE_LIMITS)"
     log "${YELLOW}[RATE LIMIT]${NC} Waiting ${wait_mins}m${wait_secs}s before retry..."
 
     # Show countdown every 30 seconds for long waits
@@ -193,6 +429,11 @@ handle_rate_limit() {
     return 0
 }
 
+# Reset consecutive rate limit counter (call after successful API call)
+reset_rate_limit_counter() {
+    CONSECUTIVE_RATE_LIMITS=0
+}
+
 # Wrapper to run claude with rate limit handling
 # Usage: run_claude_with_limit "context" "prompt" "model" "allowed_tools" "output_var_name"
 # Returns: 0 on success, 1 on failure, 2 on rate limit exit
@@ -209,6 +450,7 @@ run_claude_with_limit() {
 
     while [ "$attempt" -lt "$max_rate_limit_retries" ]; do
         ((attempt++))
+        ((TOTAL_API_CALLS++)) || true
 
         local output
         local exit_code=0
@@ -228,8 +470,8 @@ run_claude_with_limit() {
         # Save output to log
         echo "$output" >> "$log_file"
 
-        # Check for rate limiting
-        if check_rate_limit "$output"; then
+        # Check for rate limiting (pass exit_code to distinguish timeout)
+        if check_rate_limit "$output" "$exit_code"; then
             log "${YELLOW}[RATE LIMIT]${NC} Detected during $context (attempt $attempt/$max_rate_limit_retries)"
 
             if ! handle_rate_limit "$RATE_LIMIT_SECONDS" "$context"; then
@@ -240,18 +482,19 @@ run_claude_with_limit() {
             continue
         fi
 
-        # Also check exit code 1 with rate limit in case it's in stderr
+        # Also check exit code with rate limit patterns in case it's in stderr
         if [ "$exit_code" -ne 0 ]; then
             # Check if it might be a rate limit we missed
-            if echo "$output" | grep -qi "rate\|limit\|429\|overload"; then
-                if check_rate_limit "$output"; then
-                    if ! handle_rate_limit "$RATE_LIMIT_SECONDS" "$context"; then
-                        return 2
-                    fi
-                    continue
+            if check_rate_limit "$output" "$exit_code"; then
+                if ! handle_rate_limit "$RATE_LIMIT_SECONDS" "$context"; then
+                    return 2
                 fi
+                continue
             fi
         fi
+
+        # Success! Reset consecutive rate limit counter
+        reset_rate_limit_counter
 
         # Return the output via stdout and the exit code
         echo "$output"
@@ -283,10 +526,12 @@ get_task_title() {
 # Phase 1: Research
 run_research_phase() {
     local task_id="$1"
+    local task_title="${2:-}"
     local log_file="$LOG_DIR/${task_id}-research-$(date +%Y%m%d-%H%M%S).log"
     local output_file="$TMP_DIR/${task_id}-research.md"
 
     log "${CYAN}[RESEARCH]${NC} Starting research for ${YELLOW}$task_id${NC}"
+    [ -n "$task_title" ] && log "  ${CYAN}$task_title${NC}"
 
     # Get bead details
     local bead_info
@@ -370,7 +615,7 @@ This research will be stored in the bead and used for the planning phase."
     output=$(run_claude_with_limit \
         "research:$task_id" \
         "$prompt" \
-        "$MODEL_CHOICE" \
+        "$RESEARCH_MODEL" \
         "Read,Glob,Grep,Task,TodoWrite,WebSearch,WebFetch" \
         "$TIMEOUT_MINS" \
         "$log_file") || exit_code=$?
@@ -384,14 +629,17 @@ This research will be stored in the bead and used for the planning phase."
         return 2
     fi
 
+    # Record phase time for metrics
+    record_phase_time "$task_id" "research" "$start_time" "$end_time"
+
     if [ $exit_code -eq 0 ] && [ -f "$output_file" ]; then
         # Store research in bead as a comment
         bd comments add "$task_id" -f "$output_file" 2>/dev/null || \
             bd update "$task_id" --notes "$(cat "$output_file")" 2>/dev/null || true
-        log "${GREEN}[RESEARCH]${NC} Completed in $((duration/60))m$((duration%60))s"
+        log "${GREEN}[RESEARCH]${NC} Completed in $(format_duration $duration)"
         return 0
     else
-        log "${RED}[RESEARCH]${NC} Failed after $((duration/60))m$((duration%60))s"
+        log "${RED}[RESEARCH]${NC} Failed after $(format_duration $duration)"
         return 1
     fi
 }
@@ -399,11 +647,13 @@ This research will be stored in the bead and used for the planning phase."
 # Phase 2: Plan
 run_plan_phase() {
     local task_id="$1"
+    local task_title="${2:-}"
     local log_file="$LOG_DIR/${task_id}-plan-$(date +%Y%m%d-%H%M%S).log"
     local output_file="$TMP_DIR/${task_id}-plan.md"
     local research_file="$TMP_DIR/${task_id}-research.md"
 
     log "${MAGENTA}[PLAN]${NC} Creating plan for ${YELLOW}$task_id${NC}"
+    [ -n "$task_title" ] && log "  ${CYAN}$task_title${NC}"
 
     # Get bead details including any research comments
     local bead_info
@@ -491,7 +741,7 @@ This plan will be stored in the bead and used for implementation."
     output=$(run_claude_with_limit \
         "plan:$task_id" \
         "$prompt" \
-        "$MODEL_CHOICE" \
+        "$PLAN_MODEL" \
         "Read,Glob,Grep,Task,TodoWrite" \
         "$TIMEOUT_MINS" \
         "$log_file") || exit_code=$?
@@ -505,14 +755,17 @@ This plan will be stored in the bead and used for implementation."
         return 2
     fi
 
+    # Record phase time for metrics
+    record_phase_time "$task_id" "plan" "$start_time" "$end_time"
+
     if [ $exit_code -eq 0 ] && [ -f "$output_file" ]; then
         # Store plan in bead design field
         bd update "$task_id" --design "$(cat "$output_file")" 2>/dev/null || \
             bd comments add "$task_id" -f "$output_file" 2>/dev/null || true
-        log "${GREEN}[PLAN]${NC} Completed in $((duration/60))m$((duration%60))s"
+        log "${GREEN}[PLAN]${NC} Completed in $(format_duration $duration)"
         return 0
     else
-        log "${RED}[PLAN]${NC} Failed after $((duration/60))m$((duration%60))s"
+        log "${RED}[PLAN]${NC} Failed after $(format_duration $duration)"
         return 1
     fi
 }
@@ -520,10 +773,12 @@ This plan will be stored in the bead and used for implementation."
 # Phase 3: Implement
 run_implement_phase() {
     local task_id="$1"
+    local task_title="${2:-}"
     local log_file="$LOG_DIR/${task_id}-implement-$(date +%Y%m%d-%H%M%S).log"
     local plan_file="$TMP_DIR/${task_id}-plan.md"
 
     log "${BLUE}[IMPLEMENT]${NC} Implementing ${YELLOW}$task_id${NC}"
+    [ -n "$task_title" ] && log "  ${CYAN}$task_title${NC}"
 
     # Get full bead context
     local bead_info
@@ -541,7 +796,7 @@ run_implement_phase() {
     local design_content
     design_content=$(bd show "$task_id" --json 2>/dev/null | grep -o '"design":"[^"]*"' | sed 's/"design":"//; s/"$//' || echo "")
 
-    local prompt="You are implementing issue $task_id.
+    local prompt="You are autonomously implementing issue $task_id.
 
 ISSUE DETAILS:
 $bead_info
@@ -554,7 +809,7 @@ $plan_content
 
 $design_content
 
-# Implementation Instructions
+# Implementation Steps
 
 1. Read and understand the plan above.
 
@@ -576,13 +831,22 @@ $design_content
 
 5. When ALL tests/build/lint pass:
    - Commit changes with descriptive message
-   - Push to remote: git push
+   - Run: git push (IMPORTANT - always push your work)
+   - Work is NOT complete until git push succeeds
 
-6. CLEANUP (CRITICAL):
+6. Close the issue: bd close $task_id
+
+7. CLEANUP (CRITICAL):
    - Kill any processes you started (dev servers, watchers, etc.)
    - Use 'pkill -f' or 'kill' to terminate processes
    - Check with 'ps aux | grep node' before finishing
    - Do NOT leave orphaned processes running
+
+GUIDELINES:
+- Follow existing code patterns in the codebase
+- Don't over-engineer - implement what's specified
+- If blocked or uncertain, document why and move on
+- Keep commits focused and atomic
 
 Begin implementation now."
 
@@ -596,7 +860,7 @@ Begin implementation now."
     output=$(run_claude_with_limit \
         "implement:$task_id" \
         "$prompt" \
-        "$MODEL_CHOICE" \
+        "$IMPLEMENT_MODEL" \
         "Read,Write,Edit,Bash,Glob,Grep,Task,TodoWrite" \
         "$impl_timeout" \
         "$log_file") || exit_code=$?
@@ -610,11 +874,14 @@ Begin implementation now."
         return 2
     fi
 
+    # Record phase time for metrics
+    record_phase_time "$task_id" "implement" "$start_time" "$end_time"
+
     if [ $exit_code -eq 0 ]; then
-        log "${GREEN}[IMPLEMENT]${NC} Completed in $((duration/60))m$((duration%60))s"
+        log "${GREEN}[IMPLEMENT]${NC} Completed in $(format_duration $duration)"
         return 0
     else
-        log "${RED}[IMPLEMENT]${NC} Failed after $((duration/60))m$((duration%60))s"
+        log "${RED}[IMPLEMENT]${NC} Failed after $(format_duration $duration)"
         return 1
     fi
 }
@@ -715,6 +982,8 @@ VALIDATION_FAILED
 
     log "${CYAN}[FAR]${NC} Validating research for ${YELLOW}$task_id${NC}"
 
+    local start_time=$(date +%s)
+
     local validation_output
     local exit_code=0
     validation_output=$(run_claude_with_limit \
@@ -724,6 +993,12 @@ VALIDATION_FAILED
         "" \
         5 \
         "$feedback_file") || exit_code=$?
+
+    local end_time=$(date +%s)
+    local duration=$((end_time - start_time))
+
+    # Record phase time for metrics
+    record_phase_time "$task_id" "far_validation" "$start_time" "$end_time"
 
     # Save full output for debugging
     echo "$validation_output" > "$feedback_file"
@@ -736,10 +1011,10 @@ VALIDATION_FAILED
 
     # Check for pass/fail
     if echo "$validation_output" | grep -q "VALIDATION_PASSED"; then
-        log "${GREEN}[FAR]${NC} Validation PASSED"
+        log "${GREEN}[FAR]${NC} Validation PASSED ($(format_duration $duration))"
         return 0
     else
-        log "${YELLOW}[FAR]${NC} Validation FAILED - see $feedback_file"
+        log "${YELLOW}[FAR]${NC} Validation FAILED ($(format_duration $duration)) - see $feedback_file"
         return 1
     fi
 }
@@ -863,6 +1138,8 @@ VALIDATION_FAILED
 
     log "${MAGENTA}[FACTS]${NC} Validating plan for ${YELLOW}$task_id${NC}"
 
+    local start_time=$(date +%s)
+
     local validation_output
     local exit_code=0
     validation_output=$(run_claude_with_limit \
@@ -872,6 +1149,12 @@ VALIDATION_FAILED
         "" \
         5 \
         "$feedback_file") || exit_code=$?
+
+    local end_time=$(date +%s)
+    local duration=$((end_time - start_time))
+
+    # Record phase time for metrics
+    record_phase_time "$task_id" "facts_validation" "$start_time" "$end_time"
 
     # Save full output for debugging
     echo "$validation_output" > "$feedback_file"
@@ -884,12 +1167,74 @@ VALIDATION_FAILED
 
     # Check for pass/fail
     if echo "$validation_output" | grep -q "VALIDATION_PASSED"; then
-        log "${GREEN}[FACTS]${NC} Validation PASSED"
+        log "${GREEN}[FACTS]${NC} Validation PASSED ($(format_duration $duration))"
         return 0
     else
-        log "${YELLOW}[FACTS]${NC} Validation FAILED - see $feedback_file"
+        log "${YELLOW}[FACTS]${NC} Validation FAILED ($(format_duration $duration)) - see $feedback_file"
         return 1
     fi
+}
+
+# Check if research already exists in bead
+has_research() {
+    local task_id="$1"
+    # Check for research markers in comments
+    if bd comments "$task_id" 2>/dev/null | grep -qE "Problem Overview|Proposed Solution|Codebase Analysis"; then
+        return 0
+    fi
+    return 1
+}
+
+# Check if plan already exists in bead
+has_plan() {
+    local task_id="$1"
+    # Check design field or plan markers in comments
+    local design
+    design=$(bd show "$task_id" --json 2>/dev/null | grep -o '"design":"[^"]*"' | sed 's/"design":"//; s/"$//' || echo "")
+    if [ -n "$design" ] && [ "$design" != "null" ]; then
+        return 0
+    fi
+    # Also check comments for plan markers
+    if bd comments "$task_id" 2>/dev/null | grep -qE "Implementation Phases|## Phase [0-9]"; then
+        return 0
+    fi
+    return 1
+}
+
+# Generate implementation summary
+generate_summary() {
+    local task_id="$1"
+    local task_title="$2"
+
+    local start_time=$(date +%s)
+
+    # Get recent git changes
+    local changes
+    changes=$(git diff --stat HEAD~1 2>/dev/null | tail -10 || echo "No recent commits")
+
+    local files_changed
+    files_changed=$(git diff --name-only HEAD~1 2>/dev/null | head -10 || echo "")
+
+    local prompt="Summarize what was implemented in 2-3 concise sentences.
+
+Task: $task_title
+
+Files changed:
+$files_changed
+
+Stats:
+$changes
+
+Focus on what user-visible changes were made. Be brief and specific."
+
+    ((TOTAL_API_CALLS++)) || true
+    local summary
+    summary=$(timeout 2m $CLAUDE_CMD -p "$prompt" --model haiku 2>&1) || summary="Implementation completed."
+
+    local end_time=$(date +%s)
+    record_phase_time "$task_id" "summary" "$start_time" "$end_time"
+
+    echo "$summary"
 }
 
 # Run full RPI cycle for a task
@@ -897,8 +1242,13 @@ run_rpi_cycle() {
     local task_id="$1"
     local task_num="$2"
     local total="$3"
+    local task_title
+    task_title=$(get_task_title "$task_id")
 
-    log "${BLUE}[$task_num/$total]${NC} Starting RPI cycle for ${YELLOW}$task_id${NC}"
+    log "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    log "${BLUE}[$task_num/$total]${NC} ${YELLOW}$task_id${NC}"
+    log "  ${CYAN}$task_title${NC}"
+    log "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
     # Mark as in progress
     bd update "$task_id" --status in_progress 2>/dev/null || true
@@ -909,11 +1259,32 @@ run_rpi_cycle() {
     local facts_feedback="$TMP_DIR/${task_id}-facts-feedback.md"
 
     # ═══════════════════════════════════════════════════════════════════
+    # Resume Detection - Check what's already done
+    # ═══════════════════════════════════════════════════════════════════
+    local skip_research=false
+    local skip_plan=false
+
+    if has_research "$task_id"; then
+        skip_research=true
+        log "${GREEN}[RESUME]${NC} Research already exists, skipping to planning"
+    fi
+
+    if has_plan "$task_id"; then
+        skip_plan=true
+        log "${GREEN}[RESUME]${NC} Plan already exists, skipping to implementation"
+    fi
+
+    # ═══════════════════════════════════════════════════════════════════
     # Phase 1: Research with FAR Validation Loop
     # ═══════════════════════════════════════════════════════════════════
     local research_attempts=0
     local research_validated=false
     local phase_exit_code=0
+
+    if [ "$skip_research" = true ]; then
+        research_validated=true
+        log "${CYAN}[RESEARCH]${NC} Using existing research from bead"
+    fi
 
     while [ "$research_attempts" -le "$MAX_VALIDATION_RETRIES" ] && [ "$research_validated" = false ]; do
         ((research_attempts++))
@@ -926,7 +1297,7 @@ run_rpi_cycle() {
         fi
 
         phase_exit_code=0
-        run_research_phase "$task_id" || phase_exit_code=$?
+        run_research_phase "$task_id" "$task_title" || phase_exit_code=$?
 
         # Check for rate limit exit
         if [ $phase_exit_code -eq 2 ]; then
@@ -975,6 +1346,11 @@ run_rpi_cycle() {
     local plan_attempts=0
     local plan_validated=false
 
+    if [ "$skip_plan" = true ]; then
+        plan_validated=true
+        log "${MAGENTA}[PLAN]${NC} Using existing plan from bead"
+    fi
+
     while [ "$plan_attempts" -le "$MAX_VALIDATION_RETRIES" ] && [ "$plan_validated" = false ]; do
         ((plan_attempts++))
         log "${MAGENTA}[PLAN]${NC} Attempt $plan_attempts/$((MAX_VALIDATION_RETRIES + 1))"
@@ -985,7 +1361,7 @@ run_rpi_cycle() {
         fi
 
         phase_exit_code=0
-        run_plan_phase "$task_id" || phase_exit_code=$?
+        run_plan_phase "$task_id" "$task_title" || phase_exit_code=$?
 
         # Check for rate limit exit
         if [ $phase_exit_code -eq 2 ]; then
@@ -1031,7 +1407,7 @@ run_rpi_cycle() {
     # Phase 3: Implement (no validation loop - uses quality gates)
     # ═══════════════════════════════════════════════════════════════════
     phase_exit_code=0
-    run_implement_phase "$task_id" || phase_exit_code=$?
+    run_implement_phase "$task_id" "$task_title" || phase_exit_code=$?
 
     # Check for rate limit exit
     if [ $phase_exit_code -eq 2 ]; then
@@ -1049,8 +1425,25 @@ run_rpi_cycle() {
     # Final push
     git push 2>/dev/null || log "${YELLOW}Nothing to push${NC}"
 
-    log "${GREEN}[$task_num/$total]${NC} Completed RPI cycle for ${YELLOW}$task_id${NC}"
-    log "  Research: $research_attempts attempt(s) | Plan: $plan_attempts attempt(s)"
+    # Generate and display summary
+    log "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    log "${GREEN}[$task_num/$total]${NC} ✓ Completed: ${YELLOW}$task_id${NC}"
+    log "  ${CYAN}$task_title${NC}"
+    log ""
+    log "${GREEN}Summary:${NC}"
+    local summary
+    summary=$(generate_summary "$task_id" "$task_title" 2>/dev/null || echo "Implementation completed.")
+    # Log each line of summary with indentation
+    echo "$summary" | while IFS= read -r line; do
+        log "  $line"
+    done
+    log ""
+    local research_status="$research_attempts attempt(s)"
+    local plan_status="$plan_attempts attempt(s)"
+    [ "$skip_research" = true ] && research_status="skipped (existing)"
+    [ "$skip_plan" = true ] && plan_status="skipped (existing)"
+    log "  ${BLUE}Phases:${NC} Research: $research_status | Plan: $plan_status"
+    log "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
     # Cleanup temp files
     rm -f "$TMP_DIR/${task_id}-"*.md 2>/dev/null || true
@@ -1067,8 +1460,10 @@ main() {
     cd "$WORK_DIR"
 
     log "${BLUE}=== RPI Worker Started ===${NC}"
-    log "Model: $MODEL_CHOICE | Validator: $VALIDATOR_MODEL | Timeout: ${TIMEOUT_MINS}m | Max retries: $MAX_VALIDATION_RETRIES"
+    log "Models: research=$RESEARCH_MODEL, plan=$PLAN_MODEL, implement=$IMPLEMENT_MODEL | Validator: $VALIDATOR_MODEL"
+    log "Timeout: ${TIMEOUT_MINS}m | Max retries: $MAX_VALIDATION_RETRIES | Task delay: ${TASK_DELAY}s"
     [ -n "$PATTERN" ] && log "Filter pattern: $PATTERN"
+    log "Metrics will be written to: ${CYAN}$METRICS_FILE${NC}"
 
     # Get task list
     local tasks
@@ -1096,13 +1491,23 @@ main() {
 
     # Dry run
     if [ "$DRY_RUN" = true ]; then
-        log "${YELLOW}DRY RUN - would process:${NC}"
+        log "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        log "${YELLOW}DRY RUN${NC} - would process the following tasks:"
+        log "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         for i in "${!task_array[@]}"; do
             [ "$MAX_TASKS" -gt 0 ] && [ "$i" -ge "$MAX_TASKS" ] && break
             local task="${task_array[$i]}"
             local title=$(get_task_title "$task")
-            echo "  $((i+1)). $task: $title"
+            local has_r="" has_p=""
+            has_research "$task" && has_r="${GREEN}R${NC}" || has_r="${RED}R${NC}"
+            has_plan "$task" && has_p="${GREEN}P${NC}" || has_p="${RED}P${NC}"
+            echo -e "  $((i+1)). ${YELLOW}$task${NC} [$has_r$has_p]"
+            echo -e "     ${CYAN}$title${NC}"
         done
+        log ""
+        log "Legend: ${GREEN}R${NC}=research exists, ${RED}R${NC}=needs research"
+        log "        ${GREEN}P${NC}=plan exists, ${RED}P${NC}=needs planning"
+        log "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         exit 0
     fi
 
@@ -1133,6 +1538,13 @@ main() {
 
         # Sync between tasks
         bd sync 2>/dev/null || true
+
+        # Delay between tasks to avoid rate limits (skip if last task or rate limited)
+        local next_idx=$((i + 1))
+        if [ "$next_idx" -lt "$total" ] && [ "$TASK_DELAY" -gt 0 ]; then
+            log "${BLUE}[PAUSE]${NC} Waiting ${TASK_DELAY}s before next task..."
+            sleep "$TASK_DELAY"
+        fi
     done
 
     # Summary
@@ -1144,6 +1556,9 @@ main() {
         log "${BLUE}=== RPI Worker Complete ===${NC}"
         log "Completed: ${GREEN}$completed${NC} | Failed: ${RED}$failed${NC} | Total: $total"
     fi
+
+    # Write metrics summary
+    write_metrics_summary "$completed" "$failed" "$total"
 
     # Final sync
     log "Final sync..."

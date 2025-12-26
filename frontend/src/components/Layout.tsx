@@ -5,6 +5,8 @@ import {
   Columns3,
   Bot,
   FileText,
+  Box,
+  ScrollText,
   Settings,
   Menu,
   X,
@@ -15,6 +17,8 @@ const NAV_ITEMS = [
   { to: "/kanban", label: "Kanban Board", icon: Columns3 },
   { to: "/agents", label: "Agents", icon: Bot },
   { to: "/templates", label: "Templates", icon: FileText },
+  { to: "/containers", label: "Containers", icon: Box },
+  { to: "/executions", label: "Execution Logs", icon: ScrollText },
 ] as const;
 
 export function Layout() {

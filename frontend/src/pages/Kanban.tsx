@@ -11,6 +11,21 @@ import {
   Bot,
   Tag,
 } from "lucide-react";
+import { GitHubLinks } from "../components/GitHubLinks";
+
+// Task interface
+interface Task {
+  id: string;
+  title: string;
+  description: string;
+  priority: string;
+  agent: string | null;
+  tags: string[];
+  githubIssueNumber?: number;
+  githubIssueUrl?: string;
+  githubPrNumber?: number;
+  githubPrUrl?: string;
+}
 
 // Mock kanban data
 const initialColumns = [
@@ -95,6 +110,10 @@ const initialColumns = [
         priority: "high",
         agent: "CodeReviewer-A1",
         tags: ["pr", "auth"],
+        githubIssueNumber: 245,
+        githubIssueUrl: "https://github.com/example/repo/issues/245",
+        githubPrNumber: 247,
+        githubPrUrl: "https://github.com/example/repo/pull/247",
       },
     ],
   },
@@ -142,7 +161,7 @@ const tagColors: Record<string, string> = {
   devops: "var(--cyan-glow)",
 };
 
-function TaskCard({ task }: { task: (typeof initialColumns)[0]["tasks"][0] }) {
+function TaskCard({ task }: { task: Task }) {
   return (
     <div className="group bg-[var(--bg-elevated)] rounded-xl p-4 border border-white/[0.04] hover:border-[var(--cyan-glow)]/20 transition-all cursor-grab active:cursor-grabbing">
       <div className="flex items-start justify-between gap-2 mb-2">
@@ -181,6 +200,15 @@ function TaskCard({ task }: { task: (typeof initialColumns)[0]["tasks"][0] }) {
           </span>
         ))}
       </div>
+
+      {/* GitHub Links */}
+      <GitHubLinks
+        issueNumber={task.githubIssueNumber}
+        issueUrl={task.githubIssueUrl}
+        prNumber={task.githubPrNumber}
+        prUrl={task.githubPrUrl}
+        className="mb-3"
+      />
 
       {/* Agent */}
       {task.agent && (
