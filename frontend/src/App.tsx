@@ -10,12 +10,19 @@ import { Containers } from "./pages/Containers";
 import { ExecutionLogs } from "./pages/ExecutionLogs";
 import { Settings } from "./pages/Settings";
 
-// Create a client
+// QueryClient configured with optimized cache settings for production.
+// - staleTime (30s): Data considered fresh for 30 seconds, reducing redundant fetches
+//   during rapid navigation. Polling queries (refetchInterval) ignore this setting.
+// - gcTime (5m): Inactive queries garbage collected after 5 minutes.
+// - refetchOnWindowFocus: Disabled to prevent unexpected refetches.
+// - retry: Single retry on failure for resilience without excessive requests.
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: false,
       retry: 1,
+      staleTime: 30000,   // 30 seconds
+      gcTime: 300000,     // 5 minutes
     },
   },
 });

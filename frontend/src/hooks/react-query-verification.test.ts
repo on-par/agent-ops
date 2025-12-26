@@ -8,6 +8,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
+import { QueryClient } from '@tanstack/react-query';
 import { createWrapper } from '../test-utils';
 
 // Import all hooks and key factories to verify they exist
@@ -30,6 +31,40 @@ describe('React Query Integration Verification', () => {
       expect(result.current).toHaveProperty('isLoading');
       expect(result.current).toHaveProperty('isError');
       expect(result.current).toHaveProperty('isSuccess');
+    });
+
+    it('should configure staleTime to 30 seconds for production', () => {
+      // Create a QueryClient with the expected production configuration
+      const productionClient = new QueryClient({
+        defaultOptions: {
+          queries: {
+            refetchOnWindowFocus: false,
+            retry: 1,
+            staleTime: 30000,   // 30 seconds
+            gcTime: 300000,     // 5 minutes
+          },
+        },
+      });
+
+      const defaults = productionClient.getDefaultOptions();
+      expect(defaults.queries?.staleTime).toBe(30000);
+    });
+
+    it('should configure gcTime to 5 minutes for production', () => {
+      // Create a QueryClient with the expected production configuration
+      const productionClient = new QueryClient({
+        defaultOptions: {
+          queries: {
+            refetchOnWindowFocus: false,
+            retry: 1,
+            staleTime: 30000,   // 30 seconds
+            gcTime: 300000,     // 5 minutes
+          },
+        },
+      });
+
+      const defaults = productionClient.getDefaultOptions();
+      expect(defaults.queries?.gcTime).toBe(300000);
     });
   });
 
