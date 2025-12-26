@@ -35,24 +35,53 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-# Function to find and tail the latest log
+# Function to find and tail the latest log (exits when worker finishes)
 tail_log() {
     local latest_log
+    local wait_count=0
+    local max_wait=30  # Max seconds to wait for log file
+
+    # Wait for log file to appear
+    while [ ! -f "$LOG_DIR"/rpi-*.log ] 2>/dev/null; do
+        ((wait_count++))
+        if [ "$wait_count" -ge "$max_wait" ]; then
+            echo -e "${RED}Timeout waiting for log file${NC}"
+            return 1
+        fi
+        if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+            echo -e "${YELLOW}Worker session ended before creating log${NC}"
+            return 0
+        fi
+        sleep 1
+    done
+
     latest_log=$(ls -t "$LOG_DIR"/rpi-*.log 2>/dev/null | head -1)
 
     if [ -n "$latest_log" ]; then
         echo -e "${BLUE}Tailing: $latest_log${NC}"
         echo -e "${YELLOW}(Ctrl+C to stop tailing - worker continues in background)${NC}"
         echo ""
-        tail -f "$latest_log"
-    else
-        echo -e "${YELLOW}No log file found yet. Waiting...${NC}"
-        while [ ! -f "$LOG_DIR"/rpi-*.log ]; do
-            sleep 1
+
+        # Tail with session monitoring - exit when worker finishes
+        tail -f "$latest_log" &
+        local tail_pid=$!
+
+        # Monitor the tmux session
+        while kill -0 "$tail_pid" 2>/dev/null; do
+            if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+                echo ""
+                echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+                echo -e "${GREEN}Worker session finished${NC}"
+                echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+                kill "$tail_pid" 2>/dev/null || true
+                wait "$tail_pid" 2>/dev/null || true
+                return 0
+            fi
+            sleep 2
         done
-        latest_log=$(ls -t "$LOG_DIR"/rpi-*.log 2>/dev/null | head -1)
-        echo -e "${BLUE}Tailing: $latest_log${NC}"
-        tail -f "$latest_log"
+    else
+        echo -e "${RED}No log file found${NC}"
+        return 1
     fi
 }
 

@@ -2,7 +2,7 @@
 # rpi-worker.sh - Research -> Plan -> Implement autonomous worker
 #
 # Usage:
-#   ./scripts/rpi-worker.sh              # Work first ready bead
+#   ./scripts/rpi-worker.sh              # Work in_progress beads first, then ready
 #   ./scripts/rpi-worker.sh em3          # Only beads matching "em3"
 #   ./scripts/rpi-worker.sh --dry-run    # Show what would run
 #   ./scripts/rpi-worker.sh --max 3      # Limit to 3 tasks
@@ -19,6 +19,7 @@
 #   --validator-model M    Model for FAR/FACTS validation (default: sonnet)
 #   --max-retries N        Max validation retries per phase (default: 2)
 #   --task-delay S         Seconds to wait between tasks (default: 10)
+#   --max-runtime H        Maximum total runtime in hours (default: 8)
 #   --help                 Show this help
 #
 # Environment:
@@ -39,6 +40,7 @@ CLAUDE_CMD="${CLAUDE_CMD:-claude}"
 MAX_WAIT_SECONDS=3600  # 1 hour - exit if cooldown exceeds this
 TASK_DELAY=10  # seconds between tasks to avoid rate limits
 CONSECUTIVE_RATE_LIMITS=0  # track for exponential backoff
+MAX_RUNTIME_HOURS=8  # Maximum total runtime before auto-exit
 
 # Metrics tracking
 METRICS_FILE="$LOG_DIR/metrics-$(date '+%Y-%m-%d-%H-%M-%S').json"
@@ -122,6 +124,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --task-delay)
             TASK_DELAY="$2"
+            shift 2
+            ;;
+        --max-runtime)
+            MAX_RUNTIME_HOURS="$2"
             shift 2
             ;;
         --help|-h)
@@ -434,6 +440,21 @@ reset_rate_limit_counter() {
     CONSECUTIVE_RATE_LIMITS=0
 }
 
+# Check if max runtime exceeded
+# Returns: 0 if within limit, 1 if exceeded
+check_max_runtime() {
+    local current_time=$(date +%s)
+    local elapsed=$((current_time - RUN_START_TIME))
+    local max_seconds=$((MAX_RUNTIME_HOURS * 3600))
+
+    if [ "$elapsed" -ge "$max_seconds" ]; then
+        local elapsed_hours=$((elapsed / 3600))
+        log "${YELLOW}[RUNTIME]${NC} Max runtime of ${MAX_RUNTIME_HOURS}h exceeded (ran for ${elapsed_hours}h)"
+        return 1
+    fi
+    return 0
+}
+
 # Wrapper to run claude with rate limit handling
 # Usage: run_claude_with_limit "context" "prompt" "model" "allowed_tools" "output_var_name"
 # Returns: 0 on success, 1 on failure, 2 on rate limit exit
@@ -505,10 +526,32 @@ run_claude_with_limit() {
     return 1
 }
 
-# Get list of ready tasks
+# Get list of actionable tasks (in_progress first, then ready)
 get_ready_tasks() {
-    local tasks
-    tasks=$(bd ready --limit 100 2>/dev/null | grep -E '^\s*[0-9]+\.' | sed 's/.*] //' | cut -d: -f1)
+    local tasks=""
+
+    # First, get in_progress tasks (resume interrupted work)
+    local in_progress
+    in_progress=$(bd list --status in_progress 2>/dev/null | grep -oE '^[a-z0-9-]+\.[0-9]+' || true)
+
+    # Then, get ready tasks (new work)
+    local ready
+    ready=$(bd ready --limit 100 2>/dev/null | grep -E '^\s*[0-9]+\.' | sed 's/.*] //' | cut -d: -f1 || true)
+
+    # Combine: in_progress first, then ready (deduplicated)
+    if [ -n "$in_progress" ]; then
+        tasks="$in_progress"
+    fi
+    if [ -n "$ready" ]; then
+        if [ -n "$tasks" ]; then
+            tasks="$tasks"$'\n'"$ready"
+        else
+            tasks="$ready"
+        fi
+    fi
+
+    # Remove duplicates while preserving order
+    tasks=$(echo "$tasks" | awk '!seen[$0]++')
 
     if [ -n "$PATTERN" ]; then
         echo "$tasks" | grep -E "$PATTERN" || true
@@ -1461,7 +1504,7 @@ main() {
 
     log "${BLUE}=== RPI Worker Started ===${NC}"
     log "Models: research=$RESEARCH_MODEL, plan=$PLAN_MODEL, implement=$IMPLEMENT_MODEL | Validator: $VALIDATOR_MODEL"
-    log "Timeout: ${TIMEOUT_MINS}m | Max retries: $MAX_VALIDATION_RETRIES | Task delay: ${TASK_DELAY}s"
+    log "Timeout: ${TIMEOUT_MINS}m | Max retries: $MAX_VALIDATION_RETRIES | Task delay: ${TASK_DELAY}s | Max runtime: ${MAX_RUNTIME_HOURS}h"
     [ -n "$PATTERN" ] && log "Filter pattern: $PATTERN"
     log "Metrics will be written to: ${CYAN}$METRICS_FILE${NC}"
 
@@ -1515,9 +1558,16 @@ main() {
     local completed=0
     local failed=0
     local rate_limited=false
+    local runtime_exceeded=false
 
     for i in "${!task_array[@]}"; do
         [ "$MAX_TASKS" -gt 0 ] && [ "$i" -ge "$MAX_TASKS" ] && break
+
+        # Check max runtime before starting new task
+        if ! check_max_runtime; then
+            runtime_exceeded=true
+            break
+        fi
 
         local task="${task_array[$i]}"
         local task_num=$((i + 1))
@@ -1552,6 +1602,10 @@ main() {
         log "${YELLOW}=== RPI Worker Paused (Rate Limited) ===${NC}"
         log "Completed: ${GREEN}$completed${NC} | Failed: ${RED}$failed${NC} | Remaining: $((total - completed - failed))"
         log "${YELLOW}Resume later with:${NC} $0 $PATTERN"
+    elif [ "$runtime_exceeded" = true ]; then
+        log "${YELLOW}=== RPI Worker Stopped (Max Runtime) ===${NC}"
+        log "Completed: ${GREEN}$completed${NC} | Failed: ${RED}$failed${NC} | Remaining: $((total - completed - failed))"
+        log "${YELLOW}Max runtime of ${MAX_RUNTIME_HOURS}h reached. Resume later with:${NC} $0 $PATTERN"
     else
         log "${BLUE}=== RPI Worker Complete ===${NC}"
         log "Completed: ${GREEN}$completed${NC} | Failed: ${RED}$failed${NC} | Total: $total"
@@ -1568,6 +1622,11 @@ main() {
 
     if [ "$rate_limited" = true ]; then
         log "${YELLOW}Exiting due to rate limit. Run again later.${NC}"
+        exit 0  # Exit gracefully, not an error
+    fi
+
+    if [ "$runtime_exceeded" = true ]; then
+        log "${YELLOW}Exiting due to max runtime. Run again later.${NC}"
         exit 0  # Exit gracefully, not an error
     fi
 
