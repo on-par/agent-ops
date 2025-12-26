@@ -7,7 +7,8 @@ import type {
 import type { DrizzleDatabase } from "../../../shared/db/index.js";
 import type { Config } from "../../../shared/config.js";
 import { ContainerManagerService } from "../services/container-manager.service.js";
-import { createSession } from "better-sse";
+import BetterSSE from "better-sse";
+const { createSession } = BetterSSE;
 import { logsQuerySchema } from "../schemas/container.schemas.js";
 import { ZodError } from "zod";
 import { parseLogLine } from "../utils/log-parser.js";

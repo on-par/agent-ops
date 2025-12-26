@@ -125,6 +125,11 @@
   50% { box-shadow: 0 0 30px rgba(0, 240, 255, 0.5); }
 }
 
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.85; transform: scale(1.05); }
+}
+
 @keyframes blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.3; }
@@ -160,6 +165,10 @@
 /* Animation utility classes */
 .animate-pulse-glow {
   animation: pulse-glow 3s ease-in-out infinite;
+}
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 2s ease-in-out infinite;
 }
 
 .animate-blink {
@@ -382,4 +391,30 @@
 .tab-item.active {
   background: var(--bg-card);
   color: var(--text-primary);
+}
+
+/* Stat card enhancements */
+.stat-card {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(0, 240, 255, 0.1);
+}
+
+/* Button enhancements */
+.btn-secondary {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-secondary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* LIVE indicator pulse */
+.live-indicator {
+  animation: pulse-subtle 2s ease-in-out infinite;
 }
