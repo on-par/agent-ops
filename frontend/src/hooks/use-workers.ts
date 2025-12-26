@@ -4,6 +4,7 @@
  */
 
 import {
+  queryOptions,
   useQuery,
   useMutation,
   useQueryClient,
@@ -52,25 +53,35 @@ async function fetchWorker(id: string): Promise<Worker> {
 }
 
 /**
+ * Query options for fetching all workers in the pool
+ */
+export const workerPoolOptions = () => queryOptions({
+  queryKey: workerKeys.list(),
+  queryFn: fetchWorkerPool,
+  refetchInterval: 3000, // Poll every 3 seconds for active workers
+});
+
+/**
+ * Query options for fetching a single worker by ID
+ */
+export const workerOptions = (id: string) => queryOptions({
+  queryKey: workerKeys.detail(id),
+  queryFn: () => fetchWorker(id),
+  enabled: !!id,
+});
+
+/**
  * Hook to get all workers in the pool
  */
 export function useWorkerPool(): UseQueryResult<Worker[]> {
-  return useQuery({
-    queryKey: workerKeys.list(),
-    queryFn: fetchWorkerPool,
-    refetchInterval: 3000, // Poll every 3 seconds for active workers
-  });
+  return useQuery(workerPoolOptions());
 }
 
 /**
  * Hook to get a single worker by ID
  */
 export function useWorker(id?: string): UseQueryResult<Worker> {
-  return useQuery({
-    queryKey: workerKeys.detail(id || ''),
-    queryFn: () => fetchWorker(id || ''),
-    enabled: !!id,
-  });
+  return useQuery(workerOptions(id || ''));
 }
 
 /**

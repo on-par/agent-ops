@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { queryOptions, useQuery } from '@tanstack/react-query';
 import { API_BASE } from '../lib/api';
 import type {
   ExecutionListResponse,
@@ -102,15 +102,43 @@ async function fetchExecutionTraces(
 }
 
 /**
+ * Query options for fetching execution list with optional filtering
+ */
+export const executionsOptions = (filters: ExecutionFilters = {}) => queryOptions({
+  queryKey: executionKeys.list(filters),
+  queryFn: () => fetchExecutions(filters),
+  refetchInterval: 5000, // Poll every 5 seconds
+});
+
+/**
+ * Query options for fetching a single execution with traces
+ */
+export const executionOptions = (id: string) => queryOptions({
+  queryKey: executionKeys.detail(id),
+  queryFn: () => fetchExecution(id),
+  enabled: !!id,
+  refetchInterval: (query) => {
+    // Poll every 2 seconds if execution is running
+    const data = query.state.data;
+    return data?.status === 'running' ? 2000 : false;
+  },
+});
+
+/**
+ * Query options for fetching traces for an execution
+ */
+export const executionTracesOptions = (id: string, filters: { eventType?: string } = {}) => queryOptions({
+  queryKey: executionKeys.traces(id),
+  queryFn: () => fetchExecutionTraces(id, filters),
+  enabled: !!id,
+});
+
+/**
  * Hook to fetch execution list with optional filtering
  * Polls every 5 seconds to keep data fresh
  */
 export function useExecutions(filters: ExecutionFilters = {}) {
-  return useQuery({
-    queryKey: executionKeys.list(filters),
-    queryFn: () => fetchExecutions(filters),
-    refetchInterval: 5000, // Poll every 5 seconds
-  });
+  return useQuery(executionsOptions(filters));
 }
 
 /**
@@ -118,25 +146,12 @@ export function useExecutions(filters: ExecutionFilters = {}) {
  * Polls while execution is running
  */
 export function useExecution(id: string) {
-  return useQuery({
-    queryKey: executionKeys.detail(id),
-    queryFn: () => fetchExecution(id),
-    enabled: !!id,
-    refetchInterval: (query) => {
-      // Poll every 2 seconds if execution is running
-      const data = query.state.data;
-      return data?.status === 'running' ? 2000 : false;
-    },
-  });
+  return useQuery(executionOptions(id));
 }
 
 /**
  * Hook to fetch traces for an execution with optional filtering
  */
 export function useExecutionTraces(id: string, filters: { eventType?: string } = {}) {
-  return useQuery({
-    queryKey: executionKeys.traces(id),
-    queryFn: () => fetchExecutionTraces(id, filters),
-    enabled: !!id,
-  });
+  return useQuery(executionTracesOptions(id, filters));
 }

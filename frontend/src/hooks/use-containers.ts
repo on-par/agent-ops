@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { queryOptions, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { API_BASE } from '../lib/api';
 import type {
   ContainerListResponse,
@@ -138,15 +138,35 @@ async function deleteContainer(id: string): Promise<void> {
 }
 
 /**
+ * Query options for fetching container list with optional filtering
+ */
+export const containersOptions = (filters: ContainerFilters = {}) => queryOptions({
+  queryKey: containerKeys.list(filters),
+  queryFn: () => fetchContainers(filters),
+  refetchInterval: 5000, // Poll every 5 seconds
+});
+
+/**
+ * Query options for fetching a single container
+ * Polls while container is running or in transitional states
+ */
+export const containerOptions = (id: string) => queryOptions({
+  queryKey: containerKeys.detail(id),
+  queryFn: () => fetchContainer(id),
+  enabled: !!id,
+  refetchInterval: (query) => {
+    // Poll every 3 seconds if container is running or in transitional state
+    const data = query.state.data;
+    return data?.status === 'running' || data?.status === 'created' ? 3000 : false;
+  },
+});
+
+/**
  * Hook to fetch container list with optional filtering
  * Polls every 5 seconds to keep data fresh
  */
 export function useContainers(filters: ContainerFilters = {}) {
-  return useQuery({
-    queryKey: containerKeys.list(filters),
-    queryFn: () => fetchContainers(filters),
-    refetchInterval: 5000, // Poll every 5 seconds
-  });
+  return useQuery(containersOptions(filters));
 }
 
 /**
@@ -154,16 +174,7 @@ export function useContainers(filters: ContainerFilters = {}) {
  * Polls while container is running or in transitional states
  */
 export function useContainer(id: string) {
-  return useQuery({
-    queryKey: containerKeys.detail(id),
-    queryFn: () => fetchContainer(id),
-    enabled: !!id,
-    refetchInterval: (query) => {
-      // Poll every 3 seconds if container is running or in transitional state
-      const data = query.state.data;
-      return data?.status === 'running' || data?.status === 'created' ? 3000 : false;
-    },
-  });
+  return useQuery(containerOptions(id));
 }
 
 /**

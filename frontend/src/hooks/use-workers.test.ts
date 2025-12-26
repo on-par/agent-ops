@@ -13,7 +13,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
 import React from 'react';
 import { server } from '../mocks/server';

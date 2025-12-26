@@ -3,7 +3,7 @@
  * Provides queries for dashboard statistics
  */
 
-import { useQuery, type UseQueryResult } from '@tanstack/react-query';
+import { queryOptions, useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { dashboardApi } from '../lib/api-dashboard';
 import type { DashboardStats } from '../types/dashboard';
 
@@ -60,12 +60,18 @@ async function fetchDashboardStats(): Promise<DashboardStats> {
 }
 
 /**
+ * Query options for fetching dashboard statistics
+ * Enables prefetching and cache operations with type inference
+ */
+export const dashboardStatsOptions = () => queryOptions({
+  queryKey: dashboardKeys.stats(),
+  queryFn: fetchDashboardStats,
+  refetchInterval: 5000, // Poll every 5 seconds
+});
+
+/**
  * Hook to get dashboard statistics with polling
  */
 export function useDashboardStats(): UseQueryResult<DashboardStats> {
-  return useQuery({
-    queryKey: dashboardKeys.stats(),
-    queryFn: fetchDashboardStats,
-    refetchInterval: 5000, // Poll every 5 seconds
-  });
+  return useQuery(dashboardStatsOptions());
 }

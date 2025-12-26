@@ -11,11 +11,12 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
+import { useQuery } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 import { createWrapper } from '../test-utils';
 import { API_BASE } from '../lib/api';
-import { useDashboardStats, dashboardKeys } from './use-dashboard';
+import { useDashboardStats, dashboardStatsOptions, dashboardKeys } from './use-dashboard';
 
 describe('useDashboardStats - Query Key Factory', () => {
   it('should generate correct hierarchical keys', () => {
@@ -201,8 +202,6 @@ describe('useDashboardStats - Polling', () => {
       expect(result.current.isSuccess).toBe(true);
     });
 
-    const initialData = result.current.data;
-
     // With refetchInterval: 5000, the hook will refetch automatically
     // This is configured in the hook, so we verify the hook supports it
     expect(result.current).toHaveProperty('dataUpdatedAt');
@@ -278,5 +277,67 @@ describe('useDashboardStats - Error Handling', () => {
 
     // Assert - error object should exist
     expect(result.current.error).toBeDefined();
+  });
+});
+
+describe('dashboardStatsOptions - queryOptions Pattern', () => {
+  it('should export dashboardStatsOptions factory function', () => {
+    // Import at top: import { dashboardStatsOptions } from './use-dashboard';
+    // This test verifies the factory exists
+    expect(typeof dashboardStatsOptions).toBe('function');
+  });
+
+  it('should return queryOptions object with queryKey and queryFn', () => {
+    // Act
+    const options = dashboardStatsOptions();
+
+    // Assert
+    expect(options).toHaveProperty('queryKey');
+    expect(options).toHaveProperty('queryFn');
+  });
+
+  it('should preserve refetchInterval configuration in options', () => {
+    // Act
+    const options = dashboardStatsOptions();
+
+    // Assert
+    expect(options.refetchInterval).toBe(5000);
+  });
+
+  it('should use dashboardStatsOptions with useQuery directly', async () => {
+    // Arrange
+    const wrapper = createWrapper();
+
+    // Act
+    const { result } = renderHook(
+      () => useQuery(dashboardStatsOptions()),
+      { wrapper }
+    );
+
+    // Assert
+    expect(result.current.isLoading).toBe(true);
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(result.current.data).toBeDefined();
+  });
+
+  it('should enable prefetching with dashboardStatsOptions', async () => {
+    // Arrange
+    const { QueryClient } = await import('@tanstack/react-query');
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, gcTime: 0 },
+      },
+    });
+
+    // Act
+    await queryClient.prefetchQuery(dashboardStatsOptions());
+
+    // Assert
+    const cached = queryClient.getQueryData(dashboardKeys.stats());
+    expect(cached).toBeDefined();
   });
 });

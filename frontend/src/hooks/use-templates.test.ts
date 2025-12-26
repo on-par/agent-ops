@@ -13,7 +13,7 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 import { createWrapper, createTestQueryClient } from '../test-utils';
@@ -23,6 +23,8 @@ import {
   useTemplate,
   useCreateTemplate,
   useCloneTemplate,
+  templatesOptions,
+  templateOptions,
   templateKeys,
 } from './use-templates';
 
@@ -408,5 +410,91 @@ describe('useCloneTemplate - Mutation Hook', () => {
     // Assert
     expect(result.current.isError).toBe(true);
     expect(result.current.error).toBeDefined();
+  });
+});
+
+describe('templatesOptions - queryOptions Pattern', () => {
+  it('should export templatesOptions factory function', () => {
+    expect(typeof templatesOptions).toBe('function');
+  });
+
+  it('should return queryOptions object with queryKey and queryFn', () => {
+    // Act
+    const options = templatesOptions();
+
+    // Assert
+    expect(options).toHaveProperty('queryKey');
+    expect(options).toHaveProperty('queryFn');
+  });
+
+  it('should use templatesOptions with useQuery directly', async () => {
+    // Arrange
+    const wrapper = createWrapper();
+
+    // Act
+    const { result } = renderHook(
+      () => useQuery(templatesOptions()),
+      { wrapper }
+    );
+
+    // Assert
+    expect(result.current.isLoading).toBe(true);
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(Array.isArray(result.current.data)).toBe(true);
+  });
+});
+
+describe('templateOptions - queryOptions Pattern', () => {
+  it('should export templateOptions factory function with id parameter', () => {
+    expect(typeof templateOptions).toBe('function');
+  });
+
+  it('should return queryOptions object with queryKey and queryFn', () => {
+    // Act
+    const options = templateOptions('t-1');
+
+    // Assert
+    expect(options).toHaveProperty('queryKey');
+    expect(options).toHaveProperty('queryFn');
+  });
+
+  it('should preserve enabled:false when id is empty', () => {
+    // Act
+    const options = templateOptions('');
+
+    // Assert
+    expect(options.enabled).toBe(false);
+  });
+
+  it('should enable query when id is provided', () => {
+    // Act
+    const options = templateOptions('t-1');
+
+    // Assert
+    expect(options.enabled).toBe(true);
+  });
+
+  it('should use templateOptions with useQuery directly', async () => {
+    // Arrange
+    const wrapper = createWrapper();
+
+    // Act
+    const { result } = renderHook(
+      () => useQuery(templateOptions('t-1')),
+      { wrapper }
+    );
+
+    // Assert
+    expect(result.current.isLoading).toBe(true);
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(result.current.data).toBeDefined();
   });
 });

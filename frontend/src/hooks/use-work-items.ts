@@ -4,6 +4,7 @@
  */
 
 import {
+  queryOptions,
   useQuery,
   useMutation,
   useQueryClient,
@@ -56,25 +57,35 @@ async function fetchWorkItem(id: string): Promise<WorkItem> {
 }
 
 /**
+ * Query options for fetching all work items with optional filtering
+ */
+export const workItemsOptions = (filters?: { status?: string }) => queryOptions({
+  queryKey: workItemKeys.list(filters),
+  queryFn: () => fetchWorkItems(filters),
+  refetchInterval: 5000, // Poll every 5 seconds
+});
+
+/**
+ * Query options for fetching a single work item by ID
+ */
+export const workItemOptions = (id: string) => queryOptions({
+  queryKey: workItemKeys.detail(id),
+  queryFn: () => fetchWorkItem(id),
+  enabled: !!id,
+});
+
+/**
  * Hook to get all work items with optional filtering
  */
 export function useWorkItems(filters?: { status?: string }): UseQueryResult<WorkItem[]> {
-  return useQuery({
-    queryKey: workItemKeys.list(filters),
-    queryFn: () => fetchWorkItems(filters),
-    refetchInterval: 5000, // Poll every 5 seconds
-  });
+  return useQuery(workItemsOptions(filters));
 }
 
 /**
  * Hook to get a single work item by ID
  */
 export function useWorkItem(id?: string): UseQueryResult<WorkItem> {
-  return useQuery({
-    queryKey: workItemKeys.detail(id || ''),
-    queryFn: () => fetchWorkItem(id || ''),
-    enabled: !!id,
-  });
+  return useQuery(workItemOptions(id || ''));
 }
 
 /**

@@ -4,6 +4,7 @@
  */
 
 import {
+  queryOptions,
   useQuery,
   useMutation,
   useQueryClient,
@@ -52,24 +53,36 @@ async function fetchTemplate(id: string): Promise<Template> {
 }
 
 /**
+ * Query options for fetching all templates
+ * Enables prefetching and cache operations with type inference
+ */
+export const templatesOptions = () => queryOptions({
+  queryKey: templateKeys.list(),
+  queryFn: fetchTemplates,
+});
+
+/**
+ * Query options for fetching a single template by ID
+ * Enables prefetching and cache operations with type inference
+ */
+export const templateOptions = (id: string) => queryOptions({
+  queryKey: templateKeys.detail(id),
+  queryFn: () => fetchTemplate(id),
+  enabled: !!id,
+});
+
+/**
  * Hook to get all templates
  */
 export function useTemplates(): UseQueryResult<Template[]> {
-  return useQuery({
-    queryKey: templateKeys.list(),
-    queryFn: fetchTemplates,
-  });
+  return useQuery(templatesOptions());
 }
 
 /**
  * Hook to get a single template by ID
  */
 export function useTemplate(id?: string): UseQueryResult<Template> {
-  return useQuery({
-    queryKey: templateKeys.detail(id || ''),
-    queryFn: () => fetchTemplate(id || ''),
-    enabled: !!id,
-  });
+  return useQuery(templateOptions(id || ''));
 }
 
 /**
