@@ -84,7 +84,7 @@ export function loadConfig(): Config {
     llmProvider,
     llmModel: getEnvVar("LLM_MODEL", "qwen2.5-coder:7b"),
     llmBaseUrl: getEnvVar("LLM_BASE_URL", llmProvider === "ollama" ? "http://localhost:11434" : undefined),
-    llmApiKey: getEnvVar("LLM_API_KEY", undefined),
+    llmApiKey: process.env.LLM_API_KEY,
   };
 }
 
